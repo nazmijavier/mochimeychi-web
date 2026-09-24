@@ -65,6 +65,10 @@
   .btn-g{background:var(--card);border:1.5px solid var(--line-2);font-size:13px}
   .btn-g:hover{border-color:var(--purple);color:var(--purple)}
   .btn-sm{padding:8px 13px;font-size:12.5px;border-radius:10px}
+  #headerUpdateBtn{flex:none}
+  #headerUpdateBtn:disabled{background:var(--line-2);color:var(--ink-2);box-shadow:none;cursor:default}
+  #headerUpdateBtn.dirty{background:var(--danger);animation:pulseUpdate 1.6s ease-in-out infinite}
+  @keyframes pulseUpdate{0%,100%{box-shadow:0 0 0 0 rgba(196,56,79,.35)}50%{box-shadow:0 0 0 6px rgba(196,56,79,0)}}
   .full{width:100%}
 
   /* ===== login gate ===== */
@@ -228,6 +232,7 @@
   <div class="top-in">
     <div class="brand"><span class="logo" id="brandLogo"></span><span class="pg" id="pageName">Kasir</span></div>
     <div class="sp"></div>
+    <button class="btn btn-p btn-sm" id="headerUpdateBtn" disabled>Update</button>
     <button class="icon-btn" id="menuBtn" aria-label="Menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
     </button>
@@ -797,7 +802,7 @@ function loadCFG(){
   }
   try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(e){}
 }
-function saveCFG(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(e){ memoryOnly=true; } }
+function saveCFG(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(e){ memoryOnly=true; } if(typeof updateSyncButton==="function") updateSyncButton(); }
 loadCFG();
 
 const prodById = id => CFG.products.find(p=>p.id===id);
@@ -816,6 +821,74 @@ async function syncProductsFromSupabase(){
     if(missing.length){ await MM.upsertProducts(missing.map(toSupaProduct)); rows = await MM.fetchProducts(); }
   }
   if(rows && rows.length){ CFG.products = rows.map(fromSupaProduct); saveCFG(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE); }
+}
+
+/* ===== Pesanan (checkout website) <-> Supabase ===== */
+function fromSupaOrder(row){
+  var items=[]; var it=row.items||{};
+  (it.boxes||[]).forEach(function(b){ (b.items||[]).forEach(function(x){ items.push({name:x.name, qty:x.qty}); }); });
+  (it.dubai||[]).forEach(function(x){ items.push({name:x.name, qty:x.qty}); });
+  return { id:row.id, supaId:row.id, fromServer:true, name:row.customer_name||"Tanpa nama", method:row.method||"-",
+    wa:row.address||"", date:row.order_date||null, status: row.status==="selesai"?"selesai":"masuk",
+    paid: row.status==="lunas"||row.status==="selesai", items:items, note:row.note||"", total:row.total||0 };
+}
+function supaStatusFor(o){ return o.status==="selesai" ? "selesai" : (o.paid ? "lunas" : "baru"); }
+async function syncOrdersFromSupabase(){
+  if(!window.MM || !MM.ready) return;
+  var rows = await MM.fetchOrders(); if(!rows) return;
+  var serverOrders = rows.map(fromSupaOrder);
+  var localOnly = CFG.orders.filter(function(o){ return !o.fromServer; });
+  CFG.orders = serverOrders.concat(localOnly);
+  saveCFG();
+  if(typeof go==="function"&&typeof PAGE!=="undefined"&&PAGE==="pesanan") renderPesanan();
+  if(typeof renderNav==="function") renderNav();
+}
+function startOrderNotifications(){
+  if(!window.MM || !MM.ready) return;
+  MM.subscribeOrders(function(row){
+    var o=fromSupaOrder(row);
+    if(!CFG.orders.some(function(x){ return x.id===o.id; })) CFG.orders.unshift(o);
+    saveCFG();
+    toast("🛎️ Pesanan baru dari "+o.name+"!");
+    if(typeof go==="function"&&typeof PAGE!=="undefined"&&PAGE==="pesanan") renderPesanan();
+    if(typeof renderNav==="function") renderNav();
+  });
+}
+
+/* ===== Toko (profil, metode kirim, jadwal tanggal) <-> Supabase ===== */
+var LAST_SYNCED_STORE = null; // snapshot terakhir yang sudah tersimpan di server
+function storeSnapshot(){ return JSON.stringify({ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods, dates:CFG.store.dates }); }
+function updateSyncButton(){
+  var b=$("headerUpdateBtn"); if(!b) return;
+  var dirty = LAST_SYNCED_STORE!==null && storeSnapshot()!==LAST_SYNCED_STORE;
+  b.disabled=!dirty; b.classList.toggle("dirty",dirty);
+}
+async function syncStoreFromSupabase(){
+  if(!window.MM || !MM.ready) return;
+  var data = await MM.fetchStoreSettings();
+  var dateRows = await MM.fetchBlockedDates();
+  if(data && Object.keys(data).length){
+    CFG.store.name=data.name||CFG.store.name; CFG.store.wa=data.wa||CFG.store.wa; CFG.store.ig=data.ig||CFG.store.ig;
+    CFG.store.location=data.location||CFG.store.location; CFG.store.note=data.note||CFG.store.note;
+    if(data.qrisList) CFG.store.qrisList=data.qrisList;
+    if(data.methodDays) CFG.store.methodDays=data.methodDays;
+    if(data.methods) CFG.store.methods=data.methods;
+  }
+  if(dateRows){ var dd={}; dateRows.forEach(function(r){ dd[r.the_date]=r.status; }); CFG.store.dates=dd; }
+  saveCFG();
+  LAST_SYNCED_STORE = storeSnapshot(); updateSyncButton();
+  if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE);
+}
+async function pushStoreToSupabase(){
+  if(!window.MM || !MM.ready) return;
+  var b=$("headerUpdateBtn"); if(b){ b.disabled=true; b.textContent="Menyimpan…"; }
+  var storeData={ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods };
+  var r1 = await MM.upsertStoreSettings(storeData);
+  var dateRows = Object.keys(CFG.store.dates||{}).map(function(k){ return { the_date:k, status:CFG.store.dates[k] }; });
+  var r2 = await MM.replaceBlockedDates(dateRows);
+  if(b) b.textContent="Update";
+  if(r1.ok && r2.ok){ LAST_SYNCED_STORE=storeSnapshot(); updateSyncButton(); toast("Tersimpan ke server."); }
+  else { updateSyncButton(); toast("Gagal simpan: "+(r1.reason||r2.reason||"cek koneksi")); }
 }
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2000); }
 
@@ -862,7 +935,7 @@ $("lgLogo").innerHTML = LOGO_SVG;
     var session = await MM.getSession();
     if (!session) { showGate("signin"); return; }
     var ok = await MM.checkIsAdmin();
-    if (ok) { hideGate(); syncProductsFromSupabase(); } else { showGate("denied", session.user.email); }
+    if (ok) { hideGate(); syncProductsFromSupabase(); syncStoreFromSupabase(); syncOrdersFromSupabase(); startOrderNotifications(); } else { showGate("denied", session.user.email); }
   }
   if (!MM || !MM.ready) {
     // Supabase belum diisi (SUPABASE_URL/KEY) — biar tetap bisa dipakai/dites tanpa login dulu.
@@ -1569,7 +1642,7 @@ function renderOrders(){
   bindOrders();
 }
 function orderCard(o){
-  const items=o.items.map(i=>({name:prodById(i.id)?.name||"?",qty:i.qty}));
+  const items=o.items.map(i=>({name:i.name||prodById(i.id)?.name||"?",qty:i.qty}));
   return `<div class="sec-card" style="padding:13px;margin-bottom:10px;border-left:4px solid var(--${o.status});${o.status==="selesai"?"opacity:.6":""}">
     <div style="display:flex;gap:10px;margin-bottom:8px">
       <div style="flex:1"><div style="font-weight:800;font-size:15px">${esc(o.name||"Tanpa nama")}</div>
@@ -1589,8 +1662,12 @@ function orderCard(o){
   </div>`;
 }
 function bindOrders(){
-  $("subBody").querySelectorAll("[data-adv]").forEach(b=>b.onclick=()=>{const o=CFG.orders.find(x=>x.id===b.dataset.adv);const i=STATUS_FLOW.indexOf(o.status);if(i<3){o.status=STATUS_FLOW[i+1];saveCFG();renderPesanan();renderNav();toast(o.name+": "+STATUS_LABEL[o.status]);}});
-  $("subBody").querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>{const o=CFG.orders.find(x=>x.id===b.dataset.pay);o.paid=!o.paid;saveCFG();renderPesanan();});
+  $("subBody").querySelectorAll("[data-adv]").forEach(b=>b.onclick=()=>{const o=CFG.orders.find(x=>x.id===b.dataset.adv);const i=STATUS_FLOW.indexOf(o.status);if(i<3){o.status=STATUS_FLOW[i+1];saveCFG();renderPesanan();renderNav();toast(o.name+": "+STATUS_LABEL[o.status]);
+    if(o.fromServer&&window.MM&&MM.ready) MM.updateOrder(o.supaId,{status:supaStatusFor(o)});
+  }});
+  $("subBody").querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>{const o=CFG.orders.find(x=>x.id===b.dataset.pay);o.paid=!o.paid;saveCFG();renderPesanan();
+    if(o.fromServer&&window.MM&&MM.ready) MM.updateOrder(o.supaId,{status:supaStatusFor(o)});
+  });
   $("subBody").querySelectorAll("[data-oedit]").forEach(b=>b.onclick=()=>openOrder(b.dataset.oedit));
 }
 function renderProduksi(){
@@ -1641,6 +1718,7 @@ function renderTugas(){
 /* ---------- MENU / BACKUP ---------- */
 $("menuBtn").onclick=()=>{$("menuBack").hidden=false;requestAnimationFrame(()=>$("menuBack").classList.add("show"));};
 $("menuX").onclick=()=>{$("menuBack").classList.remove("show");setTimeout(()=>$("menuBack").hidden=true,240);};
+$("headerUpdateBtn").onclick=()=>{ pushStoreToSupabase(); };
 $("logoutBtn").onclick=()=>{
   if(!confirm("Keluar dari dashboard?")) return;
   $("menuBack").classList.remove("show"); setTimeout(()=>$("menuBack").hidden=true,240);

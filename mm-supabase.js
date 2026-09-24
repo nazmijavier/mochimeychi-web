@@ -69,6 +69,43 @@
         .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
     },
 
+    /* ---------- toko: metode kirim, jadwal, profil (admin saja lewat RLS) ---------- */
+    upsertStoreSettings: function (data) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("store_settings").update({ data: data }).eq("id", 1)
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
+    /* ganti seluruh isi tabel blocked_dates dengan daftar baru (lebih sederhana & aman daripada diff satu-satu) */
+    replaceBlockedDates: function (rows) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("blocked_dates").delete().gt("the_date", "1900-01-01").then(function (r) {
+        if (r.error) return { ok: false, reason: r.error.message };
+        if (!rows.length) return { ok: true };
+        return client.from("blocked_dates").insert(rows)
+          .then(function (r2) { return r2.error ? { ok: false, reason: r2.error.message } : { ok: true }; });
+      });
+    },
+
+    /* ---------- pesanan: baca & ubah (admin saja lewat RLS) ---------- */
+    fetchOrders: function () {
+      if (!ready) { warnOnce(); return Promise.resolve(null); }
+      return client.from("orders").select("*").order("created_at", { ascending: false })
+        .then(function (r) { return r.error ? null : r.data; });
+    },
+    updateOrder: function (id, patch) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("orders").update(patch).eq("id", id)
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
+    /* dengar pesanan baru masuk secara live (buat "notifikasi" di dalam dashboard) */
+    subscribeOrders: function (onInsert) {
+      if (!ready) { warnOnce(); return function () {}; }
+      var ch = client.channel("orders-live")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, function (payload) { onInsert(payload.new); })
+        .subscribe();
+      return function () { client.removeChannel(ch); };
+    },
+
     /* ---------- pesanan (checkout website menulis, dashboard membaca) ---------- */
     createOrder: function (order) {
       // order: {customer_name, method, method_fee, address, order_date, notes, total, items, source}
