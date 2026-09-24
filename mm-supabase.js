@@ -91,6 +91,11 @@
       if (!ready) return Promise.resolve(null);
       return client.auth.signOut();
     },
+    signInWithPassword: function (email, password) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.auth.signInWithPassword({ email: email, password: password })
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
     getSession: function () {
       if (!ready) return Promise.resolve(null);
       return client.auth.getSession().then(function (r) { return r.data.session; });
