@@ -809,18 +809,34 @@ const prodById = id => CFG.products.find(p=>p.id===id);
 function toSupaProduct(p){ return { id:p.id, name:p.name, price:p.price||0, grp:p.group||"mochi", sold_out:!!p.soldOut, hidden:!!p.hidden, cat:p.cat||"", img:p.img||"", tagline:p.tagline||"", description:p.desc||"" }; }
 function fromSupaProduct(r){ return { id:r.id, name:r.name, price:r.price||0, group:r.grp||"mochi", soldOut:!!r.sold_out, hidden:!!r.hidden, cat:r.cat||"", img:r.img||"", tagline:r.tagline||"", desc:r.description||"" }; }
 async function syncProductsFromSupabase(){
-  if(!window.MM || !MM.ready) return;
-  var rows = await MM.fetchProducts();
-  if(!rows) return;
-  if(!rows.length && CFG.products.length){
-    await MM.upsertProducts(CFG.products.map(toSupaProduct));
-    rows = await MM.fetchProducts();
-  } else if(rows.length){
-    var known={}; rows.forEach(function(r){ known[r.id]=1; });
-    var missing=CFG.products.filter(function(pp){ return !known[pp.id]; });
-    if(missing.length){ await MM.upsertProducts(missing.map(toSupaProduct)); rows = await MM.fetchProducts(); }
-  }
-  if(rows && rows.length){ CFG.products = rows.map(fromSupaProduct); saveCFG(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE); }
+  try{
+    if(!window.MM || !MM.ready) return;
+    var rows = await MM.fetchProducts();
+    if(!rows) return;
+    var byId={}; rows.forEach(function(r){ byId[r.id]=r; });
+    var toPush=[];
+    CFG.products.forEach(function(pp){
+      var r=byId[pp.id];
+      if(!r){ toPush.push(toSupaProduct(pp)); return; } // produk lokal belum ada di server
+      // sembuhkan field yang kosong di server tapi ada isinya di lokal (foto, tagline, deskripsi)
+      var heal={};
+      if(!r.img && pp.img) heal.img=pp.img;
+      if(!r.tagline && pp.tagline) heal.tagline=pp.tagline;
+      if(!r.description && pp.desc) heal.description=pp.desc;
+      if(Object.keys(heal).length){ toPush.push(Object.assign({id:pp.id}, heal)); }
+    });
+    if(toPush.length){ await MM.upsertProducts(toPush); rows = await MM.fetchProducts(); }
+    if(rows && rows.length){ CFG.products = rows.map(fromSupaProduct); saveCFG(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE); }
+  }catch(e){ console.warn("[MM] syncProductsFromSupabase gagal:",e); }
+}
+async function markAllAvailable(){
+  if(!confirm("Tandai SEMUA produk jadi Ready?")) return;
+  CFG.products.forEach(function(p){ p.soldOut=false; });
+  saveCFG(); renderProduk();
+  if(window.MM&&MM.ready){
+    var r = await MM.upsertProducts(CFG.products.map(toSupaProduct));
+    toast(r.ok?"Semua produk ditandai Ready.":"Sebagian belum tersimpan ke server: "+(r.reason||"cek koneksi"));
+  } else toast("Semua produk ditandai Ready (lokal).");
 }
 
 /* ===== Pesanan (checkout website) <-> Supabase ===== */
@@ -834,14 +850,16 @@ function fromSupaOrder(row){
 }
 function supaStatusFor(o){ return o.status==="selesai" ? "selesai" : (o.paid ? "lunas" : "baru"); }
 async function syncOrdersFromSupabase(){
-  if(!window.MM || !MM.ready) return;
-  var rows = await MM.fetchOrders(); if(!rows) return;
-  var serverOrders = rows.map(fromSupaOrder);
-  var localOnly = CFG.orders.filter(function(o){ return !o.fromServer; });
-  CFG.orders = serverOrders.concat(localOnly);
-  saveCFG();
-  if(typeof go==="function"&&typeof PAGE!=="undefined"&&PAGE==="pesanan") renderPesanan();
-  if(typeof renderNav==="function") renderNav();
+  try{
+    if(!window.MM || !MM.ready) return;
+    var rows = await MM.fetchOrders(); if(!rows) return;
+    var serverOrders = rows.map(fromSupaOrder);
+    var localOnly = CFG.orders.filter(function(o){ return !o.fromServer; });
+    CFG.orders = serverOrders.concat(localOnly);
+    saveCFG();
+    if(typeof go==="function"&&typeof PAGE!=="undefined"&&PAGE==="pesanan") renderPesanan();
+    if(typeof renderNav==="function") renderNav();
+  }catch(e){ console.warn("[MM] syncOrdersFromSupabase gagal:",e); }
 }
 function startOrderNotifications(){
   if(!window.MM || !MM.ready) return;
@@ -864,20 +882,27 @@ function updateSyncButton(){
   b.disabled=!dirty; b.classList.toggle("dirty",dirty);
 }
 async function syncStoreFromSupabase(){
-  if(!window.MM || !MM.ready) return;
-  var data = await MM.fetchStoreSettings();
-  var dateRows = await MM.fetchBlockedDates();
-  if(data && Object.keys(data).length){
-    CFG.store.name=data.name||CFG.store.name; CFG.store.wa=data.wa||CFG.store.wa; CFG.store.ig=data.ig||CFG.store.ig;
-    CFG.store.location=data.location||CFG.store.location; CFG.store.note=data.note||CFG.store.note;
-    if(data.qrisList) CFG.store.qrisList=data.qrisList;
-    if(data.methodDays) CFG.store.methodDays=data.methodDays;
-    if(data.methods) CFG.store.methods=data.methods;
-  }
-  if(dateRows){ var dd={}; dateRows.forEach(function(r){ dd[r.the_date]=r.status; }); CFG.store.dates=dd; }
-  saveCFG();
-  LAST_SYNCED_STORE = storeSnapshot(); updateSyncButton();
-  if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE);
+  try{
+    if(!window.MM || !MM.ready) return;
+    var data = await MM.fetchStoreSettings();
+    var dateRows = await MM.fetchBlockedDates();
+    if(data && Object.keys(data).length){
+      CFG.store.name=data.name||CFG.store.name; CFG.store.wa=data.wa||CFG.store.wa; CFG.store.ig=data.ig||CFG.store.ig;
+      CFG.store.location=data.location||CFG.store.location; CFG.store.note=data.note||CFG.store.note;
+      if(data.qrisList) CFG.store.qrisList=data.qrisList;
+      if(data.methodDays) CFG.store.methodDays=data.methodDays;
+      if(data.methods) CFG.store.methods=data.methods;
+    } else if(window.MM&&MM.ready){
+      // server belum punya apa-apa -> dorong data lokal sebagai awalan
+      await MM.upsertStoreSettings({ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods });
+      var dateRows2 = Object.keys(CFG.store.dates||{}).map(function(k){ return { the_date:k, status:CFG.store.dates[k] }; });
+      if(dateRows2.length) await MM.replaceBlockedDates(dateRows2);
+    }
+    if(dateRows && dateRows.length){ var dd={}; dateRows.forEach(function(r){ dd[r.the_date]=r.status; }); CFG.store.dates=dd; }
+    saveCFG();
+    if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE);
+  }catch(e){ console.warn("[MM] syncStoreFromSupabase gagal:",e); }
+  finally{ LAST_SYNCED_STORE = storeSnapshot(); updateSyncButton(); } // baseline selalu diset walau sync gagal, biar tombol Update tetap bisa dipakai
 }
 async function pushStoreToSupabase(){
   if(!window.MM || !MM.ready) return;
@@ -1055,12 +1080,16 @@ function renderProduk(){
   p.innerHTML=`
     <h2 class="ph">Produk</h2>
     <div class="ph-sub">Edit nama, harga, foto, stok. Perubahan langsung kepakai di Kasir &amp; Pesanan.</div>
-    <button class="btn btn-p full" id="addProdBtn" style="margin-bottom:16px">+ Tambah produk</button>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-p full" id="addProdBtn">+ Tambah produk</button>
+      <button class="btn btn-g" id="markAllBtn" style="white-space:nowrap">Semua Ready</button>
+    </div>
     ${groups.map(g=>{
       const items=CFG.products.filter(x=>x.group===g.k);
       return `<div class="grp-t">${g.t}</div>`+items.map(prodRow).join("");
     }).join("")}`;
   p.querySelector("#addProdBtn").onclick=()=>openProdEdit(null);
+  p.querySelector("#markAllBtn").onclick=()=>markAllAvailable();
   p.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>openProdEdit(b.dataset.ed));
   p.querySelectorAll("[data-stok]").forEach(b=>b.onclick=()=>{
     const pr=prodById(b.dataset.stok), soldOut=b.dataset.v==="habis"; pr.soldOut=soldOut; saveCFG(); renderProduk();
