@@ -191,7 +191,7 @@
   .stp b,.stepper .qty{min-width:30px;text-align:center;font-variant-numeric:tabular-nums;font-weight:800}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../mm-supabase.js"></script>
+<script src="mm-supabase.js"></script>
 </head>
 <body>
 
@@ -248,8 +248,8 @@
   </div>
   <input type="file" id="importFile" accept="application/json" hidden>
   <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
-    <div class="sec-t" style="font-size:13px;margin-bottom:10px">Terapkan ke website &amp; app</div>
-    <p class="save-note" style="margin-top:0;margin-bottom:10px">Upload file website (index.html) atau app 3D (mochi-3d.html), nanti di-update sama produk/toko terbaru, terus otomatis ke-download lagi.</p>
+    <div class="sec-t" style="font-size:13px;margin-bottom:10px">Terapkan ke website &amp; app (khusus metode kirim &amp; tanggal)</div>
+    <p class="save-note" style="margin-top:0;margin-bottom:10px">Produk (harga, stok, foto) sekarang otomatis tersambung ke server, nggak perlu ini lagi. Tombol di bawah masih dipakai buat metode kirim &amp; jadwal tanggal, yang belum ikut tersambung.</p>
     <div class="backup-row">
       <button class="btn btn-g" id="pubSite">Update Website (v1)</button>
       <button class="btn btn-g" id="pub3d">Update App 3D (v2)</button>
@@ -783,6 +783,22 @@ function saveCFG(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(
 loadCFG();
 
 const prodById = id => CFG.products.find(p=>p.id===id);
+function toSupaProduct(p){ return { id:p.id, name:p.name, price:p.price||0, grp:p.group||"mochi", sold_out:!!p.soldOut, hidden:!!p.hidden, cat:p.cat||"", img:p.img||"", tagline:p.tagline||"", description:p.desc||"" }; }
+function fromSupaProduct(r){ return { id:r.id, name:r.name, price:r.price||0, group:r.grp||"mochi", soldOut:!!r.sold_out, hidden:!!r.hidden, cat:r.cat||"", img:r.img||"", tagline:r.tagline||"", desc:r.description||"" }; }
+async function syncProductsFromSupabase(){
+  if(!window.MM || !MM.ready) return;
+  var rows = await MM.fetchProducts();
+  if(!rows) return;
+  if(!rows.length && CFG.products.length){
+    await MM.upsertProducts(CFG.products.map(toSupaProduct));
+    rows = await MM.fetchProducts();
+  } else if(rows.length){
+    var known={}; rows.forEach(function(r){ known[r.id]=1; });
+    var missing=CFG.products.filter(function(pp){ return !known[pp.id]; });
+    if(missing.length){ await MM.upsertProducts(missing.map(toSupaProduct)); rows = await MM.fetchProducts(); }
+  }
+  if(rows && rows.length){ CFG.products = rows.map(fromSupaProduct); saveCFG(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE); }
+}
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2000); }
 
 /* brand logo */
@@ -812,7 +828,7 @@ $("lgLogo").innerHTML = LOGO_SVG;
     var session = await MM.getSession();
     if (!session) { showGate("signin"); return; }
     var ok = await MM.checkIsAdmin();
-    if (ok) { hideGate(); } else { showGate("denied", session.user.email); }
+    if (ok) { hideGate(); syncProductsFromSupabase(); } else { showGate("denied", session.user.email); }
   }
   if (!MM || !MM.ready) {
     // Supabase belum diisi (SUPABASE_URL/KEY) — biar tetap bisa dipakai/dites tanpa login dulu.
@@ -940,7 +956,8 @@ function renderProduk(){
   p.querySelector("#addProdBtn").onclick=()=>openProdEdit(null);
   p.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>openProdEdit(b.dataset.ed));
   p.querySelectorAll("[data-stok]").forEach(b=>b.onclick=()=>{
-    const pr=prodById(b.dataset.stok); pr.soldOut=b.dataset.v==="habis"; saveCFG(); renderProduk();
+    const pr=prodById(b.dataset.stok), soldOut=b.dataset.v==="habis"; pr.soldOut=soldOut; saveCFG(); renderProduk();
+    if(window.MM&&MM.ready) MM.updateProduct(pr.id,{sold_out:soldOut}).then(r=>{ if(!r.ok) toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi")); });
   });
 }
 function prodRow(p){
@@ -2063,12 +2080,16 @@ function openProdEdit(id){
     const name=$("peName").value.trim(), price=+$("pePrice").value||0;
     if(!name){$("peName").focus();toast("Isi nama produk.");return;}
     const data={ name, price, group:$("peGroup").value, tagline:$("peTag").value.trim(), desc:$("peDesc").value.trim(), img:draftImg, hidden };
-    if(p){ Object.assign(p,data); }
-    else { CFG.products.push(Object.assign({id:slugId(name), soldOut:false}, data)); }
+    let prod;
+    if(p){ Object.assign(p,data); prod=p; }
+    else { prod=Object.assign({id:slugId(name), soldOut:false}, data); CFG.products.push(prod); }
     saveCFG(); closeModal(el); renderProduk(); toast(p?"Produk diperbarui.":"Produk ditambah.");
+    if(window.MM&&MM.ready) MM.upsertProduct(toSupaProduct(prod)).then(r=>{ if(!r.ok) toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi")); });
   };
   const del=el.querySelector("#peDel");
-  if(del) del.onclick=()=>{ if(!confirm("Hapus produk ini?")) return; CFG.products=CFG.products.filter(x=>x.id!==id); saveCFG(); closeModal(el); renderProduk(); toast("Produk dihapus."); };
+  if(del) del.onclick=()=>{ if(!confirm("Hapus produk ini?")) return; CFG.products=CFG.products.filter(x=>x.id!==id); saveCFG(); closeModal(el); renderProduk(); toast("Produk dihapus.");
+    if(window.MM&&MM.ready) MM.deleteProduct(id).then(r=>{ if(!r.ok) toast("Belum terhapus di server: "+(r.reason||"cek koneksi")); });
+  };
   openModal(el);
 }
 function slugId(name){ let base=name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,16)||"item"; let id=base,n=1; while(CFG.products.some(p=>p.id===id)){ id=base+"_"+(n++); } return id; }

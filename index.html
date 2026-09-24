@@ -2188,25 +2188,36 @@ function qrToSVG(qr, opt = {}){
     if(window.MM_NOBOX){ var _nl=boxWrap.previousElementSibling; if(_nl)_nl.style.display="none"; boxWrap.style.display="none"; setTimeout(function(){ state.box={id:"nobox",name:"Pesananmu",pcs:0,price:0,custom:true}; state.boxQty=1; render(); },0); }
 
     const flavWrap = q("flavors");
-    FLAVORS.forEach(f=>{
-      state.flavors[f.id]=0;
-      const el = document.createElement("div");
-      el.className="fl"+(f.soldOut?" sold":""); el.dataset.fl=f.id;
-      el.innerHTML = `<div class="fl-img${f.img?'':' fl-noimg'}"${f.img?` style="background-image:url('${f.img}')"`:''}>${f.img?'':'<span>Foto menyusul</span>'}${f.soldOut?'<div class="fl-soldout">Habis</div>':''}${f.cat?`<span class="fl-badge ${f.cat}">${f.cat==='new'?'New':'Terlaris'}</span>`:''}</div><div class="fl-name">Mochi ${f.name}</div>${f.tagline?`<div class="fl-sub">${f.tagline}</div>`:""}<div class="fl-price">${priceTag(f.price," /mochi")}</div><button class="fl-detail" data-detail="${f.id}" type="button">Lihat detail</button><div class="stepper"><button class="step-btn" data-act="minus" data-f="${f.id}" aria-label="Kurangi"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><input class="qty qty-input" data-q="${f.id}" type="text" inputmode="numeric" maxlength="2" value="0" aria-label="jumlah ${f.name}"><button class="step-btn" data-act="plus" data-f="${f.id}" aria-label="Tambah"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>`;
-      flavWrap.appendChild(el);
-    });
+    function flavCardHTML(f,unit,nameFn){
+      return `<div class="fl-img${f.img?'':' fl-noimg'}"${f.img?` style="background-image:url('${f.img}')"`:''}>${f.img?'':'<span>Foto menyusul</span>'}${f.soldOut?'<div class="fl-soldout">Habis</div>':''}${f.cat?`<span class="fl-badge ${f.cat}">${f.cat==='new'?'New':'Terlaris'}</span>`:''}</div><div class="fl-name">${nameFn(f)}</div>${f.tagline?`<div class="fl-sub">${f.tagline}</div>`:""}<div class="fl-price">${priceTag(f.price,unit)}</div><button class="fl-detail" data-detail="${f.id}" type="button">Lihat detail</button><div class="stepper"><button class="step-btn" data-act="minus" data-f="${f.id}" aria-label="Kurangi"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><input class="qty qty-input" data-q="${f.id}" type="text" inputmode="numeric" maxlength="2" value="${state.flavors[f.id]||0}" aria-label="jumlah ${f.name}"><button class="step-btn" data-act="plus" data-f="${f.id}" aria-label="Tambah"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>`;
+    }
+    function buildFlavorCards(){
+      flavWrap.innerHTML="";
+      FLAVORS.forEach(f=>{
+        if(state.flavors[f.id]===undefined) state.flavors[f.id]=0;
+        const el=document.createElement("div");
+        el.className="fl"+(f.soldOut?" sold":""); el.dataset.fl=f.id;
+        el.innerHTML=flavCardHTML(f," /mochi",f=>`Mochi ${f.name}`);
+        flavWrap.appendChild(el);
+      });
+    }
+    buildFlavorCards();
     flavWrap.addEventListener("click",e=>{ const btn=e.target.closest(".step-btn"); if(!btn) return; const f=btn.dataset.f; if(btn.dataset.act==="plus") state.flavors[f]++; else if(state.flavors[f]>0) state.flavors[f]--; render(); });
     flavWrap.addEventListener("input",e=>{ const inp=e.target.closest(".qty-input"); if(!inp) return; const f=inp.dataset.q; let raw=inp.value.replace(/[^0-9]/g,""); state.flavors[f]=raw===""?0:parseInt(raw,10); render(); });
     flavWrap.addEventListener("blur",e=>{ const inp=e.target.closest(".qty-input"); if(inp) inp.value=String(state.flavors[inp.dataset.q]); }, true);
 
     const dubaiWrap = q("dubai");
-    DUBAI.forEach(d=>{
-      state.flavors[d.id]=0;
-      const el = document.createElement("div");
-      el.className="fl dcc"+(d.soldOut?" sold":""); el.dataset.fl=d.id;
-      el.innerHTML = `<div class="fl-img${d.img?'':' fl-noimg'}"${d.img?` style="background-image:url('${d.img}')"`:''}>${d.img?'':'<span>Foto menyusul</span>'}${d.soldOut?'<div class="fl-soldout">Habis</div>':''}${d.cat?`<span class="fl-badge ${d.cat}">${d.cat==='new'?'New':'Terlaris'}</span>`:''}</div><div class="fl-name">${/^dcc_(s|b)$/.test(d.id) ? `Dubai Chewy Cookie ${d.short}` : d.name}</div>${d.tagline?`<div class="fl-sub">${d.tagline}</div>`:""}<div class="fl-price">${priceTag(d.price," /pcs")}</div><button class="fl-detail" data-detail="${d.id}" type="button">Lihat detail</button><div class="stepper"><button class="step-btn" data-act="minus" data-f="${d.id}" aria-label="Kurangi"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><input class="qty qty-input" data-q="${d.id}" type="text" inputmode="numeric" maxlength="2" value="0" aria-label="jumlah ${d.name}"><button class="step-btn" data-act="plus" data-f="${d.id}" aria-label="Tambah"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>`;
-      dubaiWrap.appendChild(el);
-    });
+    function buildDubaiCards(){
+      dubaiWrap.innerHTML="";
+      DUBAI.forEach(d=>{
+        if(state.flavors[d.id]===undefined) state.flavors[d.id]=0;
+        const el=document.createElement("div");
+        el.className="fl dcc"+(d.soldOut?" sold":""); el.dataset.fl=d.id;
+        el.innerHTML=flavCardHTML(d," /pcs",d=>/^dcc_(s|b)$/.test(d.id)?`Dubai Chewy Cookie ${d.short}`:d.name);
+        dubaiWrap.appendChild(el);
+      });
+    }
+    buildDubaiCards();
     dubaiWrap.addEventListener("click",e=>{ const btn=e.target.closest(".step-btn"); if(!btn) return; const f=btn.dataset.f; if(btn.dataset.act==="plus") state.flavors[f]++; else if(state.flavors[f]>0) state.flavors[f]--; render(); });
     dubaiWrap.addEventListener("input",e=>{ const inp=e.target.closest(".qty-input"); if(!inp) return; const f=inp.dataset.q; let raw=inp.value.replace(/[^0-9]/g,""); state.flavors[f]=raw===""?0:parseInt(raw,10); render(); });
     dubaiWrap.addEventListener("blur",e=>{ const inp=e.target.closest(".qty-input"); if(inp) inp.value=String(state.flavors[inp.dataset.q]); }, true);
@@ -2398,6 +2409,7 @@ function qrToSVG(qr, opt = {}){
     })();
     buildDates();
     api.rebuildDates = buildDates;
+    api.rebuildCards = function(){ buildFlavorCards(); buildDubaiCards(); };
 
     const cap = ()=> state.box ? state.box.pcs*state.boxQty : 0;
     const CUSTOM_MIN = 4;
@@ -2905,6 +2917,34 @@ function qrToSVG(qr, opt = {}){
 
   // mount builder + custom form + reviews (single page)
   const homeBuilder  = mountBuilder(document.getElementById("home-builder"), "h");
+
+  /* ===== produk langsung dari Supabase begitu tersedia (nggak perlu upload file lagi) ===== */
+  (function(){
+    if(!window.MM || !MM.ready) return;
+    MM.fetchProducts().then(function(rows){
+      if(!rows || !rows.length) return;
+      var byId={}; rows.forEach(function(r){ byId[r.id]=r; });
+      function applyTo(list,isDubai){
+        for(var i=list.length-1;i>=0;i--){
+          var f=list[i], r=byId[f.id];
+          if(!r){ continue; }
+          if(r.hidden){ list.splice(i,1); continue; }
+          f.name=r.name; f.price=r.price; f.soldOut=!!r.sold_out; f.cat=r.cat||"";
+          f.img=r.img||f.img; f.tagline=r.tagline||""; f.desc=r.description||f.desc||"";
+          if(isDubai) f.short=f.short||r.name;
+          delete byId[f.id];
+        }
+      }
+      applyTo(FLAVORS,false); applyTo(DUBAI,true);
+      var addM=[], addD=[];
+      Object.keys(byId).forEach(function(id){ var r=byId[id]; if(r.hidden) return;
+        var np={id:id,name:r.name,price:r.price,cat:r.cat||"",desc:r.description||"",img:r.img||"",soldOut:!!r.sold_out,tagline:r.tagline||""};
+        if(r.grp==="dubai"){ np.short=r.name; addD.push(np); } else { addM.push(np); } });
+      FLAVORS.unshift.apply(FLAVORS,addM); DUBAI.push.apply(DUBAI,addD);
+      if(homeBuilder.rebuildCards) homeBuilder.rebuildCards();
+      homeBuilder.render();
+    }).catch(function(e){ console.warn("[MM] gagal ambil produk live:",e); });
+  })();
   mountCustom(document.getElementById("home-custom"), "hc");
 
   (function(){

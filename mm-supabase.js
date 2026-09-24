@@ -47,6 +47,28 @@
         .then(function (r) { return r.error ? null : r.data; });
     },
 
+    /* ---------- produk: tulis (dashboard, admin saja lewat RLS) ---------- */
+    upsertProduct: function (row) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("products").upsert(row, { onConflict: "id" })
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
+    upsertProducts: function (rows) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("products").upsert(rows, { onConflict: "id" })
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
+    updateProduct: function (id, patch) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("products").update(patch).eq("id", id)
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
+    deleteProduct: function (id) {
+      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      return client.from("products").delete().eq("id", id)
+        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+    },
+
     /* ---------- pesanan (checkout website menulis, dashboard membaca) ---------- */
     createOrder: function (order) {
       // order: {customer_name, method, method_fee, address, order_date, notes, total, items, source}
