@@ -255,7 +255,11 @@
 <div class="mback" id="menuBack" hidden><div class="modal" style="max-width:440px">
   <button class="m-x" id="menuX">✕</button><div class="m-grab"></div>
   <div class="m-h">Menu &amp; Cadangan</div>
-  <p class="save-note" style="margin-top:0">Semua data (produk, pesanan, toko) tersimpan otomatis di HP/browser ini. Unduh cadangan sesekali biar aman.</p>
+  <div class="backup-row">
+    <a class="btn btn-g full" id="viewSiteBtn" href="../" target="_blank" rel="noopener" style="text-decoration:none">Lihat website</a>
+  </div>
+  <button class="btn full" id="logoutBtn" style="color:var(--danger);margin-top:8px;border:1.5px solid var(--danger-bg)">Keluar (logout)</button>
+  <p class="save-note" style="margin-top:16px">Semua data (produk, pesanan, toko) tersimpan otomatis di HP/browser ini. Unduh cadangan sesekali biar aman.</p>
   <div class="backup-row" style="margin-top:14px">
     <button class="btn btn-g" id="exportBtn">Unduh cadangan</button>
     <button class="btn btn-g" id="importBtn">Muat cadangan</button>
@@ -1637,6 +1641,11 @@ function renderTugas(){
 /* ---------- MENU / BACKUP ---------- */
 $("menuBtn").onclick=()=>{$("menuBack").hidden=false;requestAnimationFrame(()=>$("menuBack").classList.add("show"));};
 $("menuX").onclick=()=>{$("menuBack").classList.remove("show");setTimeout(()=>$("menuBack").hidden=true,240);};
+$("logoutBtn").onclick=()=>{
+  if(!confirm("Keluar dari dashboard?")) return;
+  $("menuBack").classList.remove("show"); setTimeout(()=>$("menuBack").hidden=true,240);
+  if(window.MM&&MM.ready){ MM.signOut().then(()=>location.reload()); } else { location.reload(); }
+};
 $("menuBack").addEventListener("click",e=>{if(e.target===$("menuBack"))$("menuX").click();});
 $("exportBtn").onclick=()=>{const blob=new Blob([JSON.stringify(CFG,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mochimeychi-data-${todayISO()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);toast("Cadangan ter-unduh.");};
 $("importBtn").onclick=()=>$("importFile").click();
