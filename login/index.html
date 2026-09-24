@@ -825,13 +825,9 @@ async function syncProductsFromSupabase(){
 }
 async function markAllAvailable(){
   if(!confirm("Tandai SEMUA produk jadi Ready?")) return;
-  CFG.products.forEach(function(p){ p.soldOut=false; });
+  CFG.products.forEach(function(p){ if(p.soldOut){ p.soldOut=false; markProdDirty(p.id); } });
   saveCFG(); renderProduk();
-  if(window.MM&&MM.ready){
-    var q = await MM.client().from("products").update({sold_out:false}).neq("id","");
-    var r = q.error ? {ok:false, reason:q.error.message} : {ok:true};
-    toast(r.ok?"Semua produk ditandai Ready.":"Sebagian belum tersimpan ke server: "+(r.reason||"cek koneksi"));
-  } else toast("Semua produk ditandai Ready (lokal).");
+  toast("Semua Ready. Tekan Update biar tampil di website.");
 }
 
 /* ===== Pesanan (checkout website) <-> Supabase ===== */
@@ -871,10 +867,29 @@ function startOrderNotifications(){
 /* ===== Toko (profil, metode kirim, jadwal tanggal) <-> Supabase ===== */
 var LAST_SYNCED_STORE = null; // snapshot terakhir yang sudah tersimpan di server
 function storeSnapshot(){ return JSON.stringify({ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods, dates:CFG.store.dates }); }
+/* perubahan yang belum dikirim ke server — semuanya dikirim sekaligus lewat tombol Update */
+var PENDING_PROD = {}, PENDING_DEL = {}, FORM_DIRTY = false;
+function markProdDirty(id){ PENDING_PROD[id]=1; delete PENDING_DEL[id]; }
+function isDirty(){
+  return FORM_DIRTY || Object.keys(PENDING_PROD).length>0 || Object.keys(PENDING_DEL).length>0 ||
+    (LAST_SYNCED_STORE!==null && storeSnapshot()!==LAST_SYNCED_STORE);
+}
 function updateSyncButton(){
   var b=$("headerUpdateBtn"); if(!b) return;
-  var dirty = LAST_SYNCED_STORE!==null && storeSnapshot()!==LAST_SYNCED_STORE;
+  if(b.dataset.busy) return;
+  var dirty = isDirty();
   b.disabled=!dirty; b.classList.toggle("dirty",dirty);
+}
+/* ketik di form Toko (nama, WA, dll) langsung bikin tombol Update aktif */
+document.addEventListener("input", function(e){
+  if(e.target.closest && e.target.closest("#page-toko")){ FORM_DIRTY=true; updateSyncButton(); }
+});
+window.addEventListener("beforeunload", function(e){ if(isDirty()){ e.preventDefault(); e.returnValue=""; } });
+/* ambil isi form Toko yang lagi terbuka ke CFG (sama seperti "Simpan info toko") */
+function applyTokoForm(){
+  var s=CFG.store; if(!$("tName")) return;
+  s.name=$("tName").value.trim(); s.wa=$("tWa").value.trim(); s.ig=$("tIg").value.trim();
+  s.location=$("tLoc").value.trim(); s.note=$("tNote").value.trim();
 }
 async function syncStoreFromSupabase(){
   try{
@@ -900,15 +915,23 @@ async function syncStoreFromSupabase(){
   finally{ LAST_SYNCED_STORE = storeSnapshot(); updateSyncButton(); } // baseline selalu diset walau sync gagal, biar tombol Update tetap bisa dipakai
 }
 async function pushStoreToSupabase(){
-  if(!window.MM || !MM.ready) return;
-  var b=$("headerUpdateBtn"); if(b){ b.disabled=true; b.textContent="Menyimpan…"; }
+  if(!window.MM || !MM.ready){ toast("Belum tersambung ke server."); return; }
+  if(FORM_DIRTY){ applyTokoForm(); FORM_DIRTY=false; saveCFG(); }
+  var b=$("headerUpdateBtn"); if(b){ b.disabled=true; b.dataset.busy="1"; b.textContent="Menyimpan…"; }
+  /* produk yang diubah / ditambah / dihapus */
+  var ids=Object.keys(PENDING_PROD), dels=Object.keys(PENDING_DEL), r0={ok:true};
+  var rows=ids.map(prodById).filter(Boolean).map(toSupaProduct);
+  if(rows.length){ r0=await MM.upsertProducts(rows); if(r0.ok) ids.forEach(function(id){ delete PENDING_PROD[id]; }); }
+  for(var i=0;i<dels.length;i++){ var rd=await MM.deleteProduct(dels[i]); if(rd.ok) delete PENDING_DEL[dels[i]]; else r0=rd; }
   var storeData={ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods };
   var r1 = await MM.upsertStoreSettings(storeData);
   var dateRows = Object.keys(CFG.store.dates||{}).map(function(k){ return { the_date:k, status:CFG.store.dates[k] }; });
   var r2 = await MM.replaceBlockedDates(dateRows);
-  if(b) b.textContent="Update";
-  if(r1.ok && r2.ok){ LAST_SYNCED_STORE=storeSnapshot(); updateSyncButton(); toast("Tersimpan ke server."); }
-  else { updateSyncButton(); toast("Gagal simpan: "+(r1.reason||r2.reason||"cek koneksi")); }
+  if(b){ b.textContent="Update"; delete b.dataset.busy; }
+  if(r1.ok && r2.ok) LAST_SYNCED_STORE=storeSnapshot();
+  updateSyncButton();
+  if(r0.ok && r1.ok && r2.ok) toast("Tersimpan ✓ Website & app 3D sudah ikut berubah.");
+  else toast("Gagal simpan: "+(r0.reason||r1.reason||r2.reason||"cek koneksi"));
 }
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2000); }
 
@@ -1087,8 +1110,7 @@ function renderProduk(){
   p.querySelector("#markAllBtn").onclick=()=>markAllAvailable();
   p.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>openProdEdit(b.dataset.ed));
   p.querySelectorAll("[data-stok]").forEach(b=>b.onclick=()=>{
-    const pr=prodById(b.dataset.stok), soldOut=b.dataset.v==="habis"; pr.soldOut=soldOut; saveCFG(); renderProduk();
-    if(window.MM&&MM.ready) MM.updateProduct(pr.id,{sold_out:soldOut}).then(r=>{ if(!r.ok) toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi")); });
+    const pr=prodById(b.dataset.stok), soldOut=b.dataset.v==="habis"; pr.soldOut=soldOut; markProdDirty(pr.id); saveCFG(); renderProduk();
   });
 }
 function prodRow(p){
@@ -1309,9 +1331,7 @@ function renderToko(){
   renderQrisList();
   p.querySelector("#addQris").onclick=()=>{ (CFG.store.qrisList=CFG.store.qrisList||[]).push({label:"QRIS "+(CFG.store.qrisList.length+1),qris:"",on:true}); saveCFG(); renderToko(); };
   p.querySelector("#saveToko").onclick=()=>{
-    s.name=$("tName").value.trim(); s.wa=$("tWa").value.trim(); s.ig=$("tIg").value.trim();
-    s.location=$("tLoc").value.trim(); s.note=$("tNote").value.trim();
-    saveCFG(); toast("Info toko disimpan.");
+    FORM_DIRTY=true; pushStoreToSupabase();
   };
 }
 function renderQrisList(){
@@ -2224,12 +2244,12 @@ function openProdEdit(id){
     let prod;
     if(p){ Object.assign(p,data); prod=p; }
     else { prod=Object.assign({id:slugId(name), soldOut:false}, data); CFG.products.push(prod); }
-    saveCFG(); closeModal(el); renderProduk(); toast(p?"Produk diperbarui.":"Produk ditambah.");
-    if(window.MM&&MM.ready) MM.upsertProduct(toSupaProduct(prod)).then(r=>{ toast(!r.ok ? "Belum tersimpan ke server: "+(r.reason||"cek koneksi") : (r.noImg ? "Tersimpan, tapi foto belum (kolom img belum dibuat)." : "Tersimpan — website & app 3D ikut berubah.")); });
+    saveCFG(); closeModal(el); renderProduk(); toast((p?"Produk diperbarui.":"Produk ditambah.")+" Tekan Update biar tampil di website.");
+    markProdDirty(prod.id); saveCFG();
   };
   const del=el.querySelector("#peDel");
   if(del) del.onclick=()=>{ if(!confirm("Hapus produk ini?")) return; CFG.products=CFG.products.filter(x=>x.id!==id); saveCFG(); closeModal(el); renderProduk(); toast("Produk dihapus.");
-    if(window.MM&&MM.ready) MM.deleteProduct(id).then(r=>{ if(!r.ok) toast("Belum terhapus di server: "+(r.reason||"cek koneksi")); });
+    PENDING_DEL[id]=1; delete PENDING_PROD[id]; saveCFG();
   };
   openModal(el);
 }
