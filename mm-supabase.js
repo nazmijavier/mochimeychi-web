@@ -27,6 +27,18 @@
       "Website tetap jalan seperti biasa, tapi pesanan & produk belum tersambung ke database.");
   }
 
+  /* kalau kolom "img" belum dibuat di tabel products, simpan ulang tanpa foto (biar harga/stok tetap tersimpan) */
+  function withoutMissingImg(rows, send) {
+    return send(rows).then(function (r) {
+      if (r.error && /img/.test(r.error.message || "") && /column/i.test(r.error.message || "")) {
+        console.warn("[MM] kolom img belum ada di tabel products — foto belum ikut tersimpan.");
+        var slim = rows.map(function (x) { var y = {}; for (var k in x) if (k !== "img") y[k] = x[k]; return y; });
+        return send(slim).then(function (r2) { return r2.error ? { ok: false, reason: r2.error.message } : { ok: true, noImg: true }; });
+      }
+      return r.error ? { ok: false, reason: r.error.message } : { ok: true };
+    });
+  }
+
   var MM = {
     ready: ready,
 
@@ -48,20 +60,14 @@
     },
 
     /* ---------- produk: tulis (dashboard, admin saja lewat RLS) ---------- */
-    upsertProduct: function (row) {
-      if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
-      return client.from("products").upsert(row, { onConflict: "id" })
-        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
-    },
+    upsertProduct: function (row) { return MM.upsertProducts([row]); },
     upsertProducts: function (rows) {
       if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
-      return client.from("products").upsert(rows, { onConflict: "id" })
-        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+      return withoutMissingImg(rows, function (rs) { return client.from("products").upsert(rs, { onConflict: "id" }); });
     },
     updateProduct: function (id, patch) {
       if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
-      return client.from("products").update(patch).eq("id", id)
-        .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; });
+      return withoutMissingImg([patch], function (rs) { return client.from("products").update(rs[0]).eq("id", id); });
     },
     deleteProduct: function (id) {
       if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }

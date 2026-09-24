@@ -1775,7 +1775,9 @@ img{display:block}
 
 } )();
 </script>
-<script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="mm-supabase.js"></script>
+<script type="text/plain" id="mm3d-main">
 
 (function(){
 "use strict";
@@ -1828,6 +1830,14 @@ function _hex(v,def){ if(v===undefined||v===null||v==="") return def; if(typeof 
   CONFIG.dubai=CONFIG.dubai.filter(function(p){ return !p._hidden; });
   (STORE.variants||[]).forEach(function(v){ if(!v||!v.id) return;
     CONFIG.mochi.push({ id:v.id, name:v.name||"Mochi Baru", short:v.short||v.name||"Baru", subtitle:v.subtitle||"", price:+v.price||15000, badge:v.badge||null, desc:v.desc||"", rating:+v.rating||0, sold:v.sold||"", profil:v.profil||[], chips:v.chips||[], tags:v.tags||[], color:_hex(v.color,0xEC86A8), top:_hex(v.top,0xF6B8CD) });
+  });
+  /* produk baru yang ditambah dari dashboard (belum ada di app 3D) */
+  var known={}; CONFIG.mochi.concat(CONFIG.dubai).forEach(function(p){ known[p.id]=1; });
+  (STORE.liveProducts||[]).forEach(function(r){ if(!r||!r.id||known[r.id]||r.hidden) return;
+    var img=r.img||(r.img_url&&/^(data:|https?:)/.test(r.img_url)?r.img_url:"");
+    var np={ id:r.id, name:r.name||"Produk Baru", short:r.name||"Baru", subtitle:r.tagline||"", price:+r.price||15000, badge:(r.cat==="new"?"Baru":(r.cat==="terlaris"?"Terlaris":null)), desc:r.descr||"", rating:0, sold:"Menu baru", profil:[], chips:[], tags:[], color:0xEC86A8, top:0xF6B8CD, soldOut:!!r.sold_out };
+    if(img){ np.image=img; np.imageDetail=img; }
+    (r.type==="dubai"?CONFIG.dubai:CONFIG.mochi).push(np);
   });
 })();
 CONFIG.mochi.concat(CONFIG.dubai).forEach(function(p){ if(!p.image && typeof IMG!=="undefined"&&IMG[p.id]) p.image=IMG[p.id]; if(!p.imageDetail && typeof IMGDETAIL!=="undefined"&&IMGDETAIL[p.id]) p.imageDetail=IMGDETAIL[p.id]; PMAP[p.id]=p; });
@@ -2008,7 +2018,8 @@ function frameCamera(){ var bd=boxDims(), fb=freeBand(), w=window.innerWidth, H=
   d=Math.min(Math.max(d,controls.minDistance),controls.maxDistance); measure(d); controls.update();
   camera.setViewOffset(w,H,0,-(fb.bot-m.b),w,H); }
 if(window.ResizeObserver){ var _fr=0, ro=new ResizeObserver(function(){ cancelAnimationFrame(_fr); _fr=requestAnimationFrame(function(){ if(typeof boxes!=="undefined") frameCamera(); }); });
-  window.addEventListener("load",function(){ [".dock",".topbar"].forEach(function(q){ var el=document.querySelector(q); if(el) ro.observe(el); }); }); }
+  var _obs=function(){ [".dock",".topbar"].forEach(function(q){ var el=document.querySelector(q); if(el) ro.observe(el); }); };
+  if(document.readyState==="complete") _obs(); else window.addEventListener("load",_obs); }
 function resize(){ var w=window.innerWidth,h=window.innerHeight; renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); frameCamera(); }
 window.addEventListener("resize",resize);
 function tick(now){ for(var i=anims.length-1;i>=0;i--){ var a=anims[i], t=(now-a.t0)/430; if(t>=1){ a.mesh.position.set(a.x,a.to,a.z); a.mesh.scale.setScalar(1); anims.splice(i,1); continue; } var e=1-Math.pow(1-t,3); a.mesh.position.set(a.x,a.from+(a.to-a.from)*e,a.z); var sq=t>0.82?(1-(1-(t-0.82)/0.18)*0.18):1; a.mesh.scale.set(1+(1-sq)*0.5,sq,1+(1-sq)*0.5); } if(goHome){ var off=camera.position.clone().sub(controls.target), az=Math.atan2(off.x,off.z); if(az>Math.PI) az-=2*Math.PI; if(Math.abs(az)<0.002){ goHome=false; } else { off.applyAxisAngle(new THREE.Vector3(0,1,0),-az*0.07); camera.position.copy(controls.target).add(off); } } if(lidPivot){ lidAngle+=(LID_OPEN-lidAngle)*0.07; lidPivot.rotation.x=lidAngle; } controls.update(); renderer.render(scene,camera); requestAnimationFrame(tick); }
@@ -2313,7 +2324,7 @@ function openCheckout(){ if(cartEmpty()) return;
     '<button type="button" class="ck-back" id="ckBack">Kembali ke pesanan</button>';
   buildSummary(); renderDate(); renderMethod(); updateWa();
   $("notes").addEventListener("input",function(){ notesVal=this.value; });
-  $("ckWA").addEventListener("click",function(){ if(this.disabled) return; window.open("https://wa.me/"+WA+"?text="+waMessage(),"_blank"); });
+  $("ckWA").addEventListener("click",function(){ if(this.disabled) return; saveOrder3D(); window.open("https://wa.me/"+WA+"?text="+waMessage(),"_blank"); });
   $("ckQRIS").addEventListener("click",function(){ if(this.hidden) return; openQRIS(); });
   $("ckBack").addEventListener("click",closeCheckout);
   $("ckBackdrop").hidden=false; $("checkout").hidden=false;
@@ -2993,6 +3004,15 @@ var fT; function flashFull(){ var el=$("fullBadge"); el.classList.add("show"); c
 
 /* ===================== WHATSAPP ===================== */
 function notesText(){ var n=$("notes"); return ((n?n.value:notesVal)||"").trim(); }
+/* simpan pesanan ke dashboard (Supabase) — nama pembeli dilengkapi dari chat WA */
+function saveOrder3D(){ try{ if(!window.MM||!MM.createOrder) return;
+  var bx=usedBoxes().map(function(b){ var c=boxCounts(b); return { box:"Box "+b.cap, pcs:b.cap, items:Object.keys(c).map(function(id){ var p=PMAP[id]; return {name:p.name, qty:c[id], price:p.price}; }) }; });
+  var db=dubaiIds().filter(function(id){ return dubaiQty[id]>0; }).map(function(id){ var p=PMAP[id]; return {name:p.name, qty:dubaiQty[id], price:p.price}; });
+  var iso=ckPick?(ckPick.getFullYear()+"-"+("0"+(ckPick.getMonth()+1)).slice(-2)+"-"+("0"+ckPick.getDate()).slice(-2)):null;
+  MM.createOrder({ customer_name:"Pembeli App 3D (cek WA)", method:(METHODS[ckMethod]?METHODS[ckMethod].label:null), method_fee:methodFee(),
+    address:null, order_date:iso, note:notesText()||null, total:grand()+methodFee(), items:{boxes:bx, dubai:db}, source:"3d" })
+    .then(function(r){ if(r&&!r.ok) console.warn("[MM] pesanan 3D gagal disimpan:",r.reason); });
+  }catch(e){ console.warn("[MM] pesanan 3D:",e); } }
 function waMessage(){ var L=[], n=totalMochi(), ub=usedBoxes(), notes=notesText(), st=ckPick?dateStatus(ckPick):"";
   L.push("Halo MochiMeychi, saya mau pesan:"); L.push("");
   if(n>0){ L.push("Produk: Mochi Box"+(ub.length>1?" ("+ub.length+" box)":""));
@@ -3021,6 +3041,35 @@ for(var i=0;i<cap;i++) slots[i]=null;
 ensurePick(); resize(); frameCamera(); renderRibbon(); sync();
 setCat("mochi");
 requestAnimationFrame(tick);
+})();
+</script>
+<script>
+/* ===== data live dari Supabase (dashboard) — diambil dulu, baru app 3D dijalankan ===== */
+(function(){
+  var ran=false;
+  function run(){ if(ran) return; ran=true; var src=document.getElementById("mm3d-main"); var s=document.createElement("script"); s.textContent=src.textContent; document.body.appendChild(s); }
+  if(!window.MM||!MM.ready){ run(); return; }
+  var timer=setTimeout(run,3500);   /* internet lambat: jalan pakai data bawaan */
+  function merge(res){
+    var rows=res[0], data=res[1], dates=res[2], E=window.MM3D_EMBED=window.MM3D_EMBED||{};
+    if(Array.isArray(rows)&&rows.length){
+      E.prod=E.prod||{};
+      rows.forEach(function(r){ var o=E.prod[r.id]=E.prod[r.id]||{};
+        o.price=r.price; o.soldOut=!!r.sold_out; o.hidden=!!r.hidden; });
+      E.liveProducts=rows;
+    }
+    if(data&&Array.isArray(data.methods)&&data.methods.length){
+      E.methods=data.methods.map(function(m){ return {id:m.id,label:m.label,d:m.d||m.label,fee:m.fee||0,tbd:m.tbd?1:0,addr:m.addr?1:0,sub:m.sub||"",icon:m.icon||"box",note:m.note||"",days:m.days||null,alt2:m.alt2?1:0}; });
+      if(data.methodDays) E.methodDays=data.methodDays;
+    }
+    if(Array.isArray(dates)){
+      var d={}; dates.forEach(function(r){ var a=String(r.the_date).split("-"); d[(+a[0])+"-"+(+a[1])+"-"+(+a[2])]=(r.status==="penuh"?"penuh":"konfirmasi"); });
+      E.dates=d;
+    }
+  }
+  Promise.all([MM.fetchProducts(),MM.fetchStoreSettings(),MM.fetchBlockedDates()])
+    .then(function(res){ try{ merge(res); }catch(e){ console.warn("[MM] data live 3D:",e); } clearTimeout(timer); run(); })
+    .catch(function(){ clearTimeout(timer); run(); });
 })();
 </script>
 </body>

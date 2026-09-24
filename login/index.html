@@ -270,15 +270,6 @@
     <button class="btn btn-g" id="importBtn">Muat cadangan</button>
   </div>
   <input type="file" id="importFile" accept="application/json" hidden>
-  <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
-    <div class="sec-t" style="font-size:13px;margin-bottom:10px">Terapkan ke website &amp; app (khusus metode kirim &amp; tanggal)</div>
-    <p class="save-note" style="margin-top:0;margin-bottom:10px">Produk (harga, stok, foto) sekarang otomatis tersambung ke server, nggak perlu ini lagi. Tombol di bawah masih dipakai buat metode kirim &amp; jadwal tanggal, yang belum ikut tersambung.</p>
-    <div class="backup-row">
-      <button class="btn btn-g" id="pubSite">Update Website (v1)</button>
-      <button class="btn btn-g" id="pub3d">Update App 3D (v2)</button>
-    </div>
-    <input type="file" id="pubFile" accept="text/html,.html" hidden>
-  </div>
   <button class="btn" style="width:100%;color:var(--danger);margin-top:14px" id="clearAll">Hapus semua data</button>
 </div></div>
 
@@ -806,8 +797,11 @@ function saveCFG(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(
 loadCFG();
 
 const prodById = id => CFG.products.find(p=>p.id===id);
-function toSupaProduct(p){ return { id:p.id, name:p.name, price:p.price||0, grp:p.group||"mochi", sold_out:!!p.soldOut, hidden:!!p.hidden, cat:p.cat||"", img:p.img||"", tagline:p.tagline||"", description:p.desc||"" }; }
-function fromSupaProduct(r){ return { id:r.id, name:r.name, price:r.price||0, group:r.grp||"mochi", soldOut:!!r.sold_out, hidden:!!r.hidden, cat:r.cat||"", img:r.img||"", tagline:r.tagline||"", desc:r.description||"" }; }
+/* kolom asli tabel products: type (mochi/dubai), descr, img (foto data URI), img_url (nama file lama, tidak dipakai) */
+function toSupaProduct(p){ return { id:p.id, name:p.name, price:p.price||0, type:p.group||"mochi", sold_out:!!p.soldOut, hidden:!!p.hidden, cat:p.cat||"", img:p.img||"", tagline:p.tagline||"", descr:p.desc||"" }; }
+function defaultImg(id){ var d=(DEFAULT_CONFIG.products||[]).find(function(x){ return x.id===id; }); return d&&d.img||""; }
+function usableImg(r){ if(r.img) return r.img; if(r.img_url&&/^(data:|https?:)/.test(r.img_url)) return r.img_url; return ""; }
+function fromSupaProduct(r){ return { id:r.id, name:r.name, price:r.price||0, group:r.type||"mochi", soldOut:!!r.sold_out, hidden:!!r.hidden, cat:r.cat||"", img:usableImg(r)||defaultImg(r.id), tagline:r.tagline||"", desc:r.descr||"" }; }
 async function syncProductsFromSupabase(){
   try{
     if(!window.MM || !MM.ready) return;
@@ -819,11 +813,11 @@ async function syncProductsFromSupabase(){
       var r=byId[pp.id];
       if(!r){ toPush.push(toSupaProduct(pp)); return; } // produk lokal belum ada di server
       // sembuhkan field yang kosong di server tapi ada isinya di lokal (foto, tagline, deskripsi)
-      var heal={};
-      if(!r.img && pp.img) heal.img=pp.img;
+      var heal={}, img=pp.img||defaultImg(pp.id);
+      if(!usableImg(r) && img) heal.img=img;
       if(!r.tagline && pp.tagline) heal.tagline=pp.tagline;
-      if(!r.description && pp.desc) heal.description=pp.desc;
-      if(Object.keys(heal).length){ toPush.push(Object.assign({id:pp.id}, heal)); }
+      if(!r.descr && pp.desc) heal.descr=pp.desc;
+      if(Object.keys(heal).length){ toPush.push(Object.assign({ id:r.id, name:r.name, price:r.price, type:r.type }, heal)); }
     });
     if(toPush.length){ await MM.upsertProducts(toPush); rows = await MM.fetchProducts(); }
     if(rows && rows.length){ CFG.products = rows.map(fromSupaProduct); saveCFG(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE); }
@@ -834,7 +828,8 @@ async function markAllAvailable(){
   CFG.products.forEach(function(p){ p.soldOut=false; });
   saveCFG(); renderProduk();
   if(window.MM&&MM.ready){
-    var r = await MM.upsertProducts(CFG.products.map(toSupaProduct));
+    var q = await MM.client().from("products").update({sold_out:false}).neq("id","");
+    var r = q.error ? {ok:false, reason:q.error.message} : {ok:true};
     toast(r.ok?"Semua produk ditandai Ready.":"Sebagian belum tersimpan ke server: "+(r.reason||"cek koneksi"));
   } else toast("Semua produk ditandai Ready (lokal).");
 }
@@ -1137,7 +1132,7 @@ function renderKirim(){
   const p=$("page-kirim");
   p.innerHTML=`
     <h2 class="ph">Kirim</h2>
-    <div class="ph-sub">Atur metode kirim, ongkir, hari buka, dan tanggal. Terapkan ke website lewat menu (titik tiga).</div>
+    <div class="ph-sub">Atur metode kirim, ongkir, hari buka, dan tanggal. Tekan tombol Update di atas, website &amp; app 3D langsung ikut berubah.</div>
     <div class="sec-card">
       <div class="sec-t">Metode kirim</div>
       <div id="methodList"></div>
@@ -2230,7 +2225,7 @@ function openProdEdit(id){
     if(p){ Object.assign(p,data); prod=p; }
     else { prod=Object.assign({id:slugId(name), soldOut:false}, data); CFG.products.push(prod); }
     saveCFG(); closeModal(el); renderProduk(); toast(p?"Produk diperbarui.":"Produk ditambah.");
-    if(window.MM&&MM.ready) MM.upsertProduct(toSupaProduct(prod)).then(r=>{ if(!r.ok) toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi")); });
+    if(window.MM&&MM.ready) MM.upsertProduct(toSupaProduct(prod)).then(r=>{ toast(!r.ok ? "Belum tersimpan ke server: "+(r.reason||"cek koneksi") : (r.noImg ? "Tersimpan, tapi foto belum (kolom img belum dibuat)." : "Tersimpan — website & app 3D ikut berubah.")); });
   };
   const del=el.querySelector("#peDel");
   if(del) del.onclick=()=>{ if(!confirm("Hapus produk ini?")) return; CFG.products=CFG.products.filter(x=>x.id!==id); saveCFG(); closeModal(el); renderProduk(); toast("Produk dihapus.");
@@ -2311,18 +2306,7 @@ function renderOrderProds(){
 function updOrderTotal(){ const t=Object.keys(oDraft.items).reduce((a,id)=>a+(prodById(id)?.price||0)*oDraft.items[id],0); $("oTotal").textContent="Total: "+rupiah(t); }
 
 /* ---------- PUBLISH ke website (v1) / app 3D (v2) ---------- */
-let PUB_TARGET=null;
-$("pubSite").onclick=()=>{ PUB_TARGET="site"; $("pubFile").click(); };
-$("pub3d").onclick=()=>{ PUB_TARGET="3d"; $("pubFile").click(); };
-$("pubFile").onchange=e=>{ const f=e.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=()=>{ try{ const out = PUB_TARGET==="site" ? patchSite(r.result) : patch3D(r.result);
-    const blob=new Blob([out],{type:"text/html"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-    a.download = PUB_TARGET==="site" ? "index.html" : "mochi-3d.html"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-    toast("File ter-update & ke-download."); $("menuX").click();
-  }catch(err){ toast("Gagal update: "+(err.message||"format file nggak cocok")); } };
-  r.readAsText(f); e.target.value="";
-};
+/* (dulu: tombol "Update Website/App 3D" pakai file — sekarang semua otomatis lewat tombol Update di atas) */
 function buildSiteProducts(){
   // format products utk MOCHI_CONFIG website
   const obj={};

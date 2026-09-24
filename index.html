@@ -2410,6 +2410,7 @@ function qrToSVG(qr, opt = {}){
     buildDates();
     api.rebuildDates = buildDates;
     api.rebuildCards = function(){ buildFlavorCards(); buildDubaiCards(); };
+    api.rebuildMethods = function(){ if(state.delivery) return; _rebuildMethods(); _paintDelivNote(); };
 
     const cap = ()=> state.box ? state.box.pcs*state.boxQty : 0;
     const CUSTOM_MIN = 4;
@@ -2930,7 +2931,7 @@ function qrToSVG(qr, opt = {}){
           if(!r){ continue; }
           if(r.hidden){ list.splice(i,1); continue; }
           f.name=r.name; f.price=r.price; f.soldOut=!!r.sold_out; f.cat=r.cat||"";
-          f.img=r.img||f.img; f.tagline=r.tagline||""; f.desc=r.description||f.desc||"";
+          var ri=r.img||(r.img_url&&/^(data:|https?:)/.test(r.img_url)?r.img_url:""); f.img=ri||f.img; f.tagline=r.tagline||f.tagline||""; f.desc=r.descr||f.desc||"";
           if(isDubai) f.short=f.short||r.name;
           delete byId[f.id];
         }
@@ -2938,12 +2939,27 @@ function qrToSVG(qr, opt = {}){
       applyTo(FLAVORS,false); applyTo(DUBAI,true);
       var addM=[], addD=[];
       Object.keys(byId).forEach(function(id){ var r=byId[id]; if(r.hidden) return;
-        var np={id:id,name:r.name,price:r.price,cat:r.cat||"",desc:r.description||"",img:r.img||"",soldOut:!!r.sold_out,tagline:r.tagline||""};
-        if(r.grp==="dubai"){ np.short=r.name; addD.push(np); } else { addM.push(np); } });
+        var np={id:id,name:r.name,price:r.price,cat:r.cat||"",desc:r.descr||"",img:r.img||"",soldOut:!!r.sold_out,tagline:r.tagline||""};
+        if(r.type==="dubai"){ np.short=r.name; addD.push(np); } else { addM.push(np); } });
       FLAVORS.unshift.apply(FLAVORS,addM); DUBAI.push.apply(DUBAI,addD);
       if(homeBuilder.rebuildCards) homeBuilder.rebuildCards();
       homeBuilder.render();
     }).catch(function(e){ console.warn("[MM] gagal ambil produk live:",e); });
+
+    /* metode kirim + tanggal tutup langsung dari server (dulu harus lewat tombol "Update Website") */
+    Promise.all([MM.fetchStoreSettings(), MM.fetchBlockedDates()]).then(function(res){
+      var data=res[0], rows=res[1], C=window.MOCHI_CONFIG=window.MOCHI_CONFIG||{};
+      if(data && Array.isArray(data.methods) && data.methods.length){
+        C.methods=data.methods.map(function(m){ return {id:m.id,label:m.label,d:m.d||m.label,fee:m.fee||0,tbd:m.tbd?1:0,addr:m.addr?1:0,avail:m.avail||"all",sub:m.sub||"",icon:m.icon||"box",note:m.note||"",days:m.days||null,alt2:m.alt2?1:0}; });
+        if(data.methodDays) C.methodDays=data.methodDays;
+        if(homeBuilder.rebuildMethods) homeBuilder.rebuildMethods();
+      }
+      if(rows && rows.length){
+        var av={}; rows.forEach(function(r){ av[r.the_date]= r.status==="penuh"?"full":"limited"; });
+        C.availability=av;
+      }
+      if(homeBuilder.rebuildDates) homeBuilder.rebuildDates();
+    }).catch(function(e){ console.warn("[MM] gagal ambil jadwal live:",e); });
   })();
   mountCustom(document.getElementById("home-custom"), "hc");
 
