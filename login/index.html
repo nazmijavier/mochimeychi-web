@@ -808,7 +808,13 @@ async function syncProductsFromSupabase(){
     var rows = await MM.fetchProducts();
     if(!rows) return;
     var byId={}; rows.forEach(function(r){ byId[r.id]=r; });
-    var toPush=[];
+    var toPush=[], heals=[];
+    /* sekali saja: Ube & Big Mangoo sempat hilang dari server, kembalikan dari data bawaan */
+    if(CFG.migrations.indexOf("ube-mangoo-server")<0){
+      DEFAULT_CONFIG.products.filter(function(d){ return (d.id==="ube"||d.id==="mangoo") && !byId[d.id]; })
+        .forEach(function(d){ if(!CFG.products.some(function(x){ return x.id===d.id; })) CFG.products.unshift(JSON.parse(JSON.stringify(d))); });
+      CFG.migrations.push("ube-mangoo-server");
+    }
     CFG.products.forEach(function(pp){
       var r=byId[pp.id];
       if(!r){ toPush.push(toSupaProduct(pp)); return; } // produk lokal belum ada di server
@@ -817,9 +823,11 @@ async function syncProductsFromSupabase(){
       if(!usableImg(r) && img) heal.img=img;
       if(!r.tagline && pp.tagline) heal.tagline=pp.tagline;
       if(!r.descr && pp.desc) heal.descr=pp.desc;
-      if(Object.keys(heal).length){ toPush.push(Object.assign({ id:r.id, name:r.name, price:r.price, type:r.type }, heal)); }
+      if(Object.keys(heal).length) heals.push([r.id, heal]);
     });
-    if(toPush.length){ await MM.upsertProducts(toPush); rows = await MM.fetchProducts(); }
+    if(toPush.length) await MM.upsertProducts(toPush);
+    for(var i=0;i<heals.length;i++) await MM.updateProduct(heals[i][0], heals[i][1]);  // cuma isi kolom yang kosong, kolom lain nggak disentuh
+    if(toPush.length||heals.length) rows = await MM.fetchProducts();
     if(rows && rows.length){ CFG.products = rows.map(fromSupaProduct); saveCFG(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE); }
   }catch(e){ console.warn("[MM] syncProductsFromSupabase gagal:",e); }
 }
