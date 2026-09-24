@@ -3062,7 +3062,7 @@ requestAnimationFrame(tick);
       E.methods=data.methods.map(function(m){ return {id:m.id,label:m.label,d:m.d||m.label,fee:m.fee||0,tbd:m.tbd?1:0,addr:m.addr?1:0,sub:m.sub||"",icon:m.icon||"box",note:m.note||"",days:m.days||null,alt2:m.alt2?1:0}; });
       if(data.methodDays) E.methodDays=data.methodDays;
     }
-    if(Array.isArray(dates)){
+    if(Array.isArray(dates)&&dates.length){   /* kosong = belum pernah di-Update dari dashboard, pakai jadwal bawaan */
       var d={}; dates.forEach(function(r){ var a=String(r.the_date).split("-"); d[(+a[0])+"-"+(+a[1])+"-"+(+a[2])]=(r.status==="penuh"?"penuh":"konfirmasi"); });
       E.dates=d;
     }
