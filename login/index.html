@@ -198,7 +198,7 @@
   .stp b,.stepper .qty{min-width:30px;text-align:center;font-variant-numeric:tabular-nums;font-weight:800}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="mm-supabase.js"></script>
+<script src="../mm-supabase.js"></script>
 </head>
 <body>
 
@@ -834,7 +834,10 @@ $("lgLogo").innerHTML = LOGO_SVG;
   function hideGate() { gate.hidden = true; }
   btn.addEventListener("click", function () {
     btn.disabled = true; btn.textContent = "Membuka Google…";
-    MM.signInWithGoogle(window.location.href);
+    Promise.resolve(MM.signInWithGoogle(window.location.href)).then(function (r) {
+      if (r && r.error) { btn.disabled = false; btn.textContent = "Masuk dengan Google"; emailErr.textContent = "Gagal buka Google: " + r.error.message; emailErr.classList.add("show"); }
+    }).catch(function (e) { btn.disabled = false; btn.textContent = "Masuk dengan Google"; emailErr.textContent = "Gagal buka Google: " + e; emailErr.classList.add("show"); });
+    setTimeout(function () { if (btn.disabled) { btn.disabled = false; btn.textContent = "Masuk dengan Google"; } }, 8000);
   });
   signout.addEventListener("click", function () { MM.signOut().then(function () { showGate("signin"); }); });
   emailForm.addEventListener("submit", function (e) {
