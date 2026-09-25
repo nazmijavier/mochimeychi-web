@@ -773,7 +773,7 @@
       <a class="link" href="#review">Review</a>
       <a class="link" href="#order">Menu</a>
       <a class="link" href="#faq">FAQ</a>
-      <a class="nav-3d" href="https://mochimeychi.app/" target="_blank" rel="noopener">
+      <a class="nav-3d" href="/3d.html" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 2v20M3 7l9 5 9-5"/></svg>
         Order 3D
       </a>
@@ -2064,7 +2064,8 @@ function qrToSVG(qr, opt = {}){
   (function(){
     var mbBtn = document.getElementById("mbBtn");
     if(mbBtn) mbBtn.addEventListener("click", function(e){
-      if(mbBtn.dataset.needinfo==="1"){ e.preventDefault(); if(activeApi && activeApi.scrollToNeed) activeApi.scrollToNeed(); }
+      if(mbBtn.dataset.needinfo==="1"){ e.preventDefault(); if(activeApi && activeApi.scrollToNeed) activeApi.scrollToNeed(); return; }
+      if(activeApi && activeApi.submitWA && /wa\.me/.test(mbBtn.href)){ e.preventDefault(); activeApi.submitWA(); }
     });
   })();
 
@@ -2823,6 +2824,8 @@ function qrToSVG(qr, opt = {}){
       saveThenGo(grand(), href);
     });
     api.render = render;
+    /* tombol "Pesan" di bar bawah (HP) lewat jalur yang sama: cek data + simpan pesanan ke dashboard + buka WA */
+    api.submitWA = function(){ q("waBtn").click(); };
     api.order = function(){
       if(window.MM_ORDERS_OFF) return {has:false,valid:false,totalText:"Rp0",link:"#"};
       if(isMulti()){
