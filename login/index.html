@@ -798,10 +798,10 @@ loadCFG();
 
 const prodById = id => CFG.products.find(p=>p.id===id);
 /* kolom asli tabel products: type (mochi/dubai), descr, img (foto data URI), img_url (nama file lama, tidak dipakai) */
-function toSupaProduct(p){ return { id:p.id, name:p.name, price:p.price||0, type:p.group||"mochi", sold_out:!!p.soldOut, hidden:!!p.hidden, cat:p.cat||"", img:p.img||"", tagline:p.tagline||"", descr:p.desc||"" }; }
+function toSupaProduct(p){ return { id:p.id, name:p.name, price:p.price||0, type:p.group||"mochi", sold_out:!!p.soldOut, hidden:!!p.hidden, cat:p.cat||"", img:p.img||"", img_url:p.imgCustom?"uploaded":null, tagline:p.tagline||"", descr:p.desc||"" }; }
 function defaultImg(id){ var d=(DEFAULT_CONFIG.products||[]).find(function(x){ return x.id===id; }); return d&&d.img||""; }
 function usableImg(r){ if(r.img) return r.img; if(r.img_url&&/^(data:|https?:)/.test(r.img_url)) return r.img_url; return ""; }
-function fromSupaProduct(r){ return { id:r.id, name:r.name, price:r.price||0, group:r.type||"mochi", soldOut:!!r.sold_out, hidden:!!r.hidden, cat:r.cat||"", img:usableImg(r)||defaultImg(r.id), tagline:r.tagline||"", desc:r.descr||"" }; }
+function fromSupaProduct(r){ return { id:r.id, name:r.name, price:r.price||0, group:r.type||"mochi", soldOut:!!r.sold_out, hidden:!!r.hidden, cat:r.cat||"", img:usableImg(r)||defaultImg(r.id), imgCustom:r.img_url==="uploaded", tagline:r.tagline||"", desc:r.descr||"" }; }
 async function syncProductsFromSupabase(){
   try{
     if(!window.MM || !MM.ready) return;
@@ -2216,7 +2216,7 @@ const CASH_ICON='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" str
 /* ---------- PRODUK EDIT ---------- */
 function openProdEdit(id){
   const p = id ? prodById(id) : null;
-  let draftImg = p?.img||"";
+  let draftImg = p?.img||"", imgChanged=false;
   const el=modalShell("prodBack",`
     <button class="m-x" id="peX">✕</button><div class="m-grab"></div>
     <div class="m-h">${p?"Edit produk":"Produk baru"}</div>
@@ -2242,13 +2242,14 @@ function openProdEdit(id){
   el.addEventListener("click",e=>{if(e.target===el)closeModal(el);});
   el.querySelector("#pePhoto").onclick=()=>$("peFile").click();
   el.querySelector("#peFile").onchange=e=>{ const f=e.target.files[0]; if(!f) return;
-    resizeImage(f, 472, dataUrl=>{ draftImg=dataUrl; $("peThumb").style.backgroundImage=`url('${dataUrl}')`; $("peThumb").innerHTML=""; }); };
+    resizeImage(f, 472, dataUrl=>{ draftImg=dataUrl; imgChanged=true; $("peThumb").style.backgroundImage=`url('${dataUrl}')`; $("peThumb").innerHTML=""; }); };
   el.querySelector("#peHidden").onclick=e=>{const b=e.target.closest("[data-h]");if(!b)return;hidden=b.dataset.h==="1";
     el.querySelectorAll("#peHidden button").forEach(x=>x.classList.toggle("on",x===b));};
   el.querySelector("#peSave").onclick=()=>{
     const name=$("peName").value.trim(), price=+$("pePrice").value||0;
     if(!name){$("peName").focus();toast("Isi nama produk.");return;}
     const data={ name, price, group:$("peGroup").value, tagline:$("peTag").value.trim(), desc:$("peDesc").value.trim(), img:draftImg, hidden };
+    if(imgChanged) data.imgCustom=true;   // foto diganti manual -> app 3D ikut pakai foto ini
     let prod;
     if(p){ Object.assign(p,data); prod=p; }
     else { prod=Object.assign({id:slugId(name), soldOut:false}, data); CFG.products.push(prod); }

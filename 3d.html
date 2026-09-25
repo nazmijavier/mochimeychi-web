@@ -1826,6 +1826,15 @@ function _hex(v,def){ if(v===undefined||v===null||v==="") return def; if(typeof 
     if(o.image!==undefined&&o.image!=="") { p.image=o.image; p.imageDetail=o.imageDetail||o.image; }
     p._hidden=!!o.hidden;
   });
+  /* isi produk dari dashboard: nama, tagline, deskripsi, label, dan foto (kalau diganti dari dashboard) */
+  var live={}; (STORE.liveProducts||[]).forEach(function(r){ if(r&&r.id) live[r.id]=r; });
+  CONFIG.mochi.concat(CONFIG.dubai).forEach(function(p){ var r=live[p.id]; if(!r) return;
+    if(r.name && r.name!==p.short && r.name!==p.name){ p.name=(/^Mochi /.test(p.name)&&!/^Mochi /i.test(r.name))?"Mochi "+r.name:r.name; p.short=r.name; }
+    if(r.tagline) p.subtitle=r.tagline;
+    if(r.descr) p.desc=r.descr;
+    if(r.cat==="new") p.badge="Baru"; else if(r.cat==="terlaris") p.badge="Terlaris";
+    if(r.img_url==="uploaded" && r.img){ p.image=r.img; p.imageDetail=r.img; }
+  });
   CONFIG.mochi=CONFIG.mochi.filter(function(p){ return !p._hidden; });
   CONFIG.dubai=CONFIG.dubai.filter(function(p){ return !p._hidden; });
   (STORE.variants||[]).forEach(function(v){ if(!v||!v.id) return;
