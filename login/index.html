@@ -97,6 +97,17 @@
   .catbar{display:flex;gap:7px;margin-bottom:14px;flex-wrap:wrap}
   .catbar button{padding:8px 15px;border-radius:999px;border:1.5px solid var(--line-2);font-weight:700;font-size:13px;color:var(--ink-2);background:var(--card)}
   .catbar button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .ksteps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:4px 0 8px}
+  .kstep{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:12px 6px 10px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .kstep .ic{width:40px;height:40px;border-radius:12px;background:var(--purple-soft);color:var(--purple);display:flex;align-items:center;justify-content:center}
+  .kstep .ic svg{width:22px;height:22px}
+  .kstep .n{font-weight:800;font-size:20px;line-height:1;color:var(--ink)}
+  .kstep .l{font-size:11.5px;font-weight:700;color:var(--ink-2)}
+  .kstep.done{background:var(--ok-bg);border-color:transparent}.kstep.done .ic{background:#fff;color:var(--ok)}.kstep.done .n{color:var(--ok);font-size:14px;padding:3px 0}
+  .kitems{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .kitem{display:inline-flex;align-items:center;gap:7px;background:var(--cream);border:1px solid var(--line);border-radius:12px;padding:4px 10px 4px 4px;font-size:12.5px;font-weight:700;color:var(--ink)}
+  .kitem b{color:var(--purple)}
+  .grp-ic{display:inline-flex;vertical-align:-4px;margin-right:6px}.grp-ic svg{width:17px;height:17px}
   .grp-t{font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-2);margin:6px 0 10px}
   .prods{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:22px}
   .pcard{position:relative;background:var(--card);border:1.5px solid var(--line);border-radius:15px;padding:9px;text-align:left;transition:transform .1s,border-color .15s,box-shadow .18s;display:flex;flex-direction:column;gap:9px;cursor:pointer}
@@ -1736,7 +1747,7 @@ function orderCard(o){
         <span class="flag" style="background:${o.paid?'var(--ok-bg)':'var(--danger-bg)'};color:${o.paid?'var(--ok)':'var(--danger)'}">${o.paid?"Lunas":"Belum bayar"}</span>
       </div>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">${items.map(i=>`<span class="flag" style="background:var(--cream);border:1px solid var(--line);color:var(--ink);font-size:11.5px">${esc(i.name)} ×${i.qty}</span>`).join("")}</div>
+    <div class="kitems" style="margin:0 0 10px">${items.map(i=>`<span class="kitem">${thumb(prodImgFor(i),i.name,30)}<span>${esc(i.name)} <b>×${i.qty}</b></span></span>`).join("")}</div>
     ${o.note?`<div style="font-size:12px;color:var(--ink-2);background:var(--warn-bg);border-radius:9px;padding:7px 10px;margin-bottom:10px;font-weight:600">📝 ${esc(o.note)}</div>`:""}
     <div style="display:flex;gap:7px">
       <button class="btn btn-p btn-sm" style="flex:1${o.status==="selesai"?";background:var(--siap)":""}" data-adv="${o.id}" ${o.status==="selesai"?"disabled":""}>${o.status==="selesai"?"✓ Selesai":STATUS_NEXT[o.status]}</button>
@@ -1755,7 +1766,19 @@ function bindOrders(){
   $("subBody").querySelectorAll("[data-oedit]").forEach(b=>b.onclick=()=>openOrder(b.dataset.oedit));
 }
 /* ===== KERJAAN: daftar kerja otomatis dari pesanan (tanpa nulis apa-apa) ===== */
-function itemsOf(o){ return (o.items||[]).map(function(i){ return { name:i.name||(prodById(i.id)||{}).name||"?", qty:+i.qty||0 }; }).filter(function(i){ return i.qty>0; }); }
+function itemsOf(o){ return (o.items||[]).map(function(i){ const id=i.id||nameToId(i.name), p=id&&prodById(id);   /* nama disamakan ke daftar Produk (3D pakai "Mochi ...", website tidak) */
+    return { name:(p&&p.name)||i.name||"?", qty:+i.qty||0, img:(p&&p.img)||"" }; }).filter(function(i){ return i.qty>0; }); }
+/* foto produk dari daftar Produk (pesanan website/3D cuma simpan nama -> dicocokkan) */
+function prodImgFor(i){ const id=i.id||nameToId(i.name); const p=id&&prodById(id); return (p&&p.img)||""; }
+function thumb(src,name,size){ return src?`<img src="${src}" alt="" style="width:${size}px;height:${size}px;border-radius:9px;object-fit:cover;background:#fff;flex:none">`:`<span style="width:${size}px;height:${size}px;border-radius:9px;background:var(--purple-soft);color:var(--purple);display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(size*.42)}px;flex:none">${esc((name||"?").charAt(0))}</span>`; }
+const KICON={
+  bayar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a1 1 0 0 1 1 1v3"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M18 12a2 2 0 0 0 0 4h3v-4Z"/></svg>',
+  bikin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.46.32-.84.73-1.04a4 4 0 0 0-2.14-7.59 5 5 0 0 0-9.18 0 4 4 0 0 0-2.14 7.59c.41.2.73.58.73 1.04V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/></svg>',
+  packing:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.7 4.73a2 2 0 0 0 2 0L20.7 7"/><path d="m7.5 4.27 9 5.15"/></svg>',
+  serah:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>'
+};
+function grpIc(k){ return `<span class="grp-ic">${KICON[k]}</span>`; }
 function ordersForDay(off){
   const t=todayISO(), day=isoAdd(t,off), act=CFG.orders.filter(o=>o.status!=="selesai");
   return act.filter(o=>o.date===day || (off===0 && (!o.date || o.date<t)));
@@ -1763,28 +1786,36 @@ function ordersForDay(off){
 function kerjaSteps(os){
   const bayar=os.filter(o=>!o.paid), paid=os.filter(o=>o.paid);
   const packing=paid.filter(o=>o.status==="masuk"||o.status==="dibuat"), serah=os.filter(o=>o.status==="siap"&&o.paid);
-  const bikin={}; packing.forEach(o=>itemsOf(o).forEach(i=>{ const b=bikin[i.name]=bikin[i.name]||{qty:0,done:0}; b.qty+=i.qty; if(o.done&&o.done[i.name]) b.done+=i.qty; }));
+  const bikin={}; packing.forEach(o=>itemsOf(o).forEach(i=>{ const b=bikin[i.name]=bikin[i.name]||{qty:0,done:0,img:i.img}; b.qty+=i.qty; if(o.done&&o.done[i.name]) b.done+=i.qty; }));
   const bikinOpen=Object.keys(bikin).filter(n=>bikin[n].done<bikin[n].qty).length;
   return { bayar, packing, serah, bikin, open: bayar.length + bikinOpen + packing.length + serah.length };
 }
 function kerjaCheck(on){ return `<div style="width:26px;height:26px;border-radius:8px;border:2px solid ${on?"var(--siap)":"var(--line-2)"};background:${on?"var(--siap)":"#fff"};flex:none;display:flex;align-items:center;justify-content:center">${on?'<svg viewBox="0 0 24 24" width="15" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>':""}</div>`; }
-function kerjaItems(o){ return itemsOf(o).map(i=>`${esc(i.name)} ×${i.qty}`).join(", "); }
+function kerjaItems(o){ return `<div class="kitems">${itemsOf(o).map(i=>`<span class="kitem">${thumb(i.img,i.name,30)}<span>${esc(i.name)} <b>×${i.qty}</b></span></span>`).join("")}</div>`; }
 function renderKerja(){
   const t=todayISO();
   const days=[0,1,2].map(off=>({off, label: off===0?"Hari ini":off===1?"Besok":fmtDay(isoAdd(t,off)).split(",")[0], n: kerjaSteps(ordersForDay(off)).open }));
   const os=ordersForDay(KERJA_DAY), S=kerjaSteps(os);
   let html=`<div class="catbar" id="kDays">${days.map(d=>`<button data-kd="${d.off}" class="${d.off===KERJA_DAY?"on":""}">${esc(d.label)}${d.n?" ("+d.n+")":""}</button>`).join("")}</div>`;
-  html+=`<div style="background:${S.open?"var(--purple-soft)":"var(--ok-bg)"};color:${S.open?"var(--purple)":"var(--ok)"};border-radius:14px;padding:13px 14px;font-weight:800;font-size:15px;margin:4px 0 6px">${S.open?`${S.open} kerjaan lagi · ${fmtDay(isoAdd(t,KERJA_DAY))}`:(os.length?"Semua beres! 🎉":"Belum ada pesanan untuk hari ini ✨")}</div>`;
+  const dayName = KERJA_DAY===0?"hari ini":KERJA_DAY===1?"besok":"hari "+fmtDay(isoAdd(t,KERJA_DAY)).split(",")[0];
+  if(!os.length){
+    html+=`<div class="empty" style="padding:30px 20px"><img src="/assets/meychi-relax.webp" alt="" style="width:170px;max-width:60%;margin-bottom:10px"><p><b style="font-size:16px;color:var(--ink)">Belum ada pesanan untuk ${esc(dayName)}</b><br>Pesanan dari website &amp; app 3D otomatis muncul di sini, lengkap dengan apa yang harus dikerjakan.</p></div>`;
+    $("subBody").innerHTML=html; $("subBody").querySelectorAll("[data-kd]").forEach(b=>b.onclick=()=>{ KERJA_DAY=+b.dataset.kd; renderKerja(); }); return;
+  }
+  const bikinLeft=Object.keys(S.bikin).reduce((a,n)=>a+Math.max(0,S.bikin[n].qty-S.bikin[n].done),0);
+  const steps=[{k:"bayar",l:"Cek bayar",n:S.bayar.length},{k:"bikin",l:"Bikin",n:bikinLeft},{k:"packing",l:"Packing",n:S.packing.length},{k:"serah",l:"Serahkan",n:S.serah.length}];
+  html+=`<div class="ksteps">${steps.map(x=>`<div class="kstep ${x.n?"":"done"}" data-kjump="${x.k}"><div class="ic">${x.n?KICON[x.k]:KICON.check}</div><div class="n">${x.n||"Beres"}</div><div class="l">${x.l}${x.k==="bikin"&&x.n?" (pcs)":""}</div></div>`).join("")}</div>`;
+  html+=`<div style="background:${S.open?"var(--purple-soft)":"var(--ok-bg)"};color:${S.open?"var(--purple)":"var(--ok)"};border-radius:14px;padding:13px 14px;font-weight:800;font-size:15px;margin:4px 0 6px;display:flex;align-items:center;gap:12px">${S.open?"":'<img src="/assets/meychi-tray.webp" alt="" style="width:54px">'}<span>${S.open?`${S.open} kerjaan lagi · ${fmtDay(isoAdd(t,KERJA_DAY))}`:"Semua beres untuk "+esc(dayName)+"! 🎉"}</span></div>`;
   const late=os.filter(o=>o.date&&o.date<t);
   if(late.length) html+=`<div style="font-size:12.5px;font-weight:700;color:var(--danger);background:var(--danger-bg);border-radius:10px;padding:8px 11px;margin-bottom:6px">⚠️ ${late.length} pesanan lewat tanggal, belum selesai — ikut ditampilkan di sini.</div>`;
 
   // 1. cek bayar
   if(S.bayar.length){
-    html+=`<div class="grp-t" style="margin-top:16px">💸 Cek pembayaran · ${S.bayar.length}</div>`;
+    html+=`<div class="grp-t" id="k-bayar" style="margin-top:16px">${grpIc("bayar")}Cek pembayaran · ${S.bayar.length}</div>`;
     html+=S.bayar.map(o=>`<div class="sec-card" style="padding:12px;margin-bottom:8px">
       <div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0">
         <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")} · ${rupiah(o.total||0)}</div>
-        <div style="font-size:12px;color:var(--ink-2);font-weight:600;margin-top:2px">${kerjaItems(o)}</div>
+        ${kerjaItems(o)}
         <div style="font-size:11.5px;color:var(--ink-2);margin-top:2px">${esc(o.method||"-")}${o.date?" · "+esc(fmtDay(o.date)):""}</div></div>
       </div>
       <div style="display:flex;gap:7px;margin-top:9px"><button class="btn btn-p btn-sm" style="flex:1" data-kpay="${o.id}">Sudah bayar ✓</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
@@ -1796,36 +1827,37 @@ function renderKerja(){
   const names=Object.keys(S.bikin);
   if(names.length){
     const tot=names.reduce((a,n)=>a+S.bikin[n].qty,0);
-    html+=`<div class="grp-t" style="margin-top:16px">🍡 Bikin · ${tot} pcs</div>`;
+    html+=`<div class="grp-t" id="k-bikin" style="margin-top:16px">${grpIc("bikin")}Bikin · ${tot} pcs</div>`;
     html+=names.sort((a,b)=>S.bikin[b].qty-S.bikin[a].qty).map(n=>{ const b=S.bikin[n], done=b.done>=b.qty;
-      return `<div class="ed-item" data-kb="${esc(n)}" style="cursor:pointer;${done?"background:var(--ok-bg);border-color:transparent":""}">${kerjaCheck(done)}
+      return `<div class="ed-item" data-kb="${esc(n)}" style="cursor:pointer;${done?"background:var(--ok-bg);border-color:transparent":""}">${kerjaCheck(done)}${thumb(b.img,n,44)}
         <div class="ed-main" style="font-weight:700;font-size:14.5px;${done?"text-decoration:line-through;color:var(--ink-2)":""}">${esc(n)}</div>
         <div style="font-weight:800;font-size:20px;color:${done?"var(--ink-2)":"var(--purple)"}">${b.qty}</div></div>`; }).join("");
   }
   // 3. packing
   if(S.packing.length){
-    html+=`<div class="grp-t" style="margin-top:16px">📦 Packing · ${S.packing.length}</div>`;
+    html+=`<div class="grp-t" id="k-packing" style="margin-top:16px">${grpIc("packing")}Packing · ${S.packing.length}</div>`;
     html+=S.packing.map(o=>{ const its=itemsOf(o), ready=its.every(i=>o.done&&o.done[i.name]);
       return `<div class="sec-card" style="padding:12px;margin-bottom:8px;border-left:4px solid ${ready?"var(--siap)":"var(--line-2)"}">
         <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")}</div>
-        <div style="font-size:12.5px;color:var(--ink);font-weight:600;margin-top:3px">${kerjaItems(o)}</div>
+        ${kerjaItems(o)}
         ${o.note?`<div style="font-size:12px;color:var(--ink-2);background:var(--warn-bg);border-radius:9px;padding:6px 9px;margin-top:6px;font-weight:600">📝 ${esc(o.note)}</div>`:""}
-        <div style="display:flex;gap:7px;margin-top:9px"><button class="btn ${ready?"btn-p":"btn-g"} btn-sm" style="flex:1" data-ksiap="${o.id}">${ready?"Sudah dipacking ✓":"Packing selesai (walau belum dicentang)"}</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
+        <div style="display:flex;gap:7px;margin-top:9px"><button class="btn ${ready?"btn-p":"btn-g"} btn-sm" style="flex:1" data-ksiap="${o.id}">${ready?"Sudah dipacking ✓":"Tandai sudah dipacking"}</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
       </div>`; }).join("");
   }
   // 4. serahkan
   if(S.serah.length){
-    html+=`<div class="grp-t" style="margin-top:16px">🛵 Serahkan · ${S.serah.length}</div>`;
+    html+=`<div class="grp-t" id="k-serah" style="margin-top:16px">${grpIc("serah")}Serahkan · ${S.serah.length}</div>`;
     html+=S.serah.map(o=>`<div class="sec-card" style="padding:12px;margin-bottom:8px;border-left:4px solid var(--siap)">
       <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")} · ${esc(o.method||"-")}</div>
       ${o.wa?`<div style="font-size:12.5px;font-weight:600;margin-top:3px">📍 ${esc(o.wa)}</div>`:""}
-      <div style="font-size:12px;color:var(--ink-2);margin-top:2px">${kerjaItems(o)}</div>
+      ${kerjaItems(o)}
       <div style="display:flex;gap:7px;margin-top:9px"><button class="btn btn-p btn-sm" style="flex:1" data-kdone="${o.id}">Sudah diterima pembeli ✓</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
     </div>`).join("");
   }
   $("subBody").innerHTML=html;
   const body=$("subBody"), find=id=>CFG.orders.find(x=>x.id===id), after=()=>{ saveCFG(); renderKerja(); renderNav(); };
   body.querySelectorAll("[data-kd]").forEach(b=>b.onclick=()=>{ KERJA_DAY=+b.dataset.kd; renderKerja(); });
+  body.querySelectorAll("[data-kjump]").forEach(b=>b.onclick=()=>{ const el=document.getElementById("k-"+b.dataset.kjump); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); });
   body.querySelectorAll("[data-kpay]").forEach(b=>b.onclick=()=>{ const o=find(b.dataset.kpay); o.paid=true; saveOrderProgress(o); after(); toast(o.name+": lunas ✓"); });
   body.querySelectorAll("[data-kb]").forEach(el=>el.onclick=()=>{ const n=el.dataset.kb, b=S.bikin[n], on=!(b.done>=b.qty);
     S.packing.forEach(o=>{ if(!itemsOf(o).some(i=>i.name===n)) return; o.done=Object.assign({},o.done||{}); if(on) o.done[n]=true; else delete o.done[n];
