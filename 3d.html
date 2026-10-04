@@ -2144,15 +2144,14 @@ var DOWS=["Min","Sen","Sel","Rab","Kam","Jum","Sab"], MONS=["Jan","Feb","Mar","A
 function d0(d){ var x=new Date(d); x.setHours(0,0,0,0); return x; }
 function dHash(d){ var n=d.getFullYear()*372+(d.getMonth()+1)*31+d.getDate(); n=(n*2654435761)%2147483647; return n<0?-n:n; }
 function dateStatus(d){ var t=d0(new Date()), dd=d0(d), diff=Math.round((dd-t)/86400000);
-  if(diff<0) return "lewat";
+  if(diff<1) return "lewat";   /* pesan hari ini -> paling cepat siap besok */
   var ok=STORE.dates&&STORE.dates[dd.getFullYear()+"-"+(dd.getMonth()+1)+"-"+dd.getDate()], base;
   var hasRule = ckMethod && METHODS[ckMethod] && METHODS[ckMethod].days;   /* metode punya aturan hari sendiri */
   if(ok==="bisa"||ok==="konfirmasi"||ok==="penuh") base=ok;
   else { var w=dd.getDay();
-    if(hasRule) base = (diff<2 ? "konfirmasi" : "bisa");   /* hari libur/konfirmasi diatur metode, sisanya lead-time */
+    if(hasRule) base = "bisa";   /* hari libur/konfirmasi diatur metode, sisanya lead-time */
     else if(w===0) base="penuh";        /* Minggu: tutup (fallback lama) */
     else if(w===6) base="konfirmasi";   /* Sabtu: perlu konfirmasi (fallback lama) */
-    else if(diff<2) base="konfirmasi";  /* pre-order fresh H+2 */
     else base="bisa"; }
   if(ckMethod){                                   /* aturan metode kepilih menang */
     var ms=methodStatus(ckMethod,d);
@@ -2175,7 +2174,7 @@ function renderDate(){ var sec=$("dateSec"); if(!sec) return; ensurePick();
   if(st==="konfirmasi") msg='<div class="dmsg warn">'+fmtDate(ckPick)+': tanggal ini perlu dikonfirmasi dulu lewat WhatsApp. Admin cek ketersediaan sebelum pesanan diproses.</div>';
   else if(st==="bisa") msg='<div class="dmsg ok">'+fmtDate(ckPick)+': paling aman untuk pre-order. Pesanan dibuat fresh setelah pembayaran dikonfirmasi.</div>';
   var minD=d0(new Date()), mn=minD.getFullYear()+"-"+String(minD.getMonth()+1).padStart(2,"0")+"-"+String(minD.getDate()).padStart(2,"0");
-  sec.innerHTML='<div class="o-h">Tanggal ambil / kirim</div><div class="o-hint">Karena dibuat fresh, pilih tanggal minimal 1\u20132 hari kerja setelah pesan. Paling aman pilih H+2.</div>'+
+  sec.innerHTML='<div class="o-h">Tanggal ambil / kirim</div><div class="o-hint">Semua mochi dibuat mulai jam 7 pagi dan siap sekitar jam 2 siang di tanggal pilihanmu. Pesan paling lambat sehari sebelumnya.</div>'+
     '<div class="dhead"><b>'+range+'</b><div class="dnav"><button type="button" class="dnav-b" id="dPrev"'+(ckWeekOff<=0?" disabled":"")+' aria-label="Minggu sebelumnya"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m15 18-6-6 6-6\"/></svg></button><button type="button" class="dnav-b" id="dNext" aria-label="Minggu berikutnya"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg></button><button type="button" class="dall" id="dAllBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Pilih tanggal</button></div></div>'+
     '<div class="dcells">'+cells+'</div>'+msg+
     '<div class="dlegend"><span class="lg"><i class="lg-ic bisa">\u2713</i>Bisa langsung</span><span class="lg"><i class="lg-ic konf">!</i>Perlu konfirmasi</span><span class="lg"><i class="lg-ic penuh">\u2715</i>Penuh</span></div>';
@@ -2327,7 +2326,7 @@ function openCheckout(){ if(cartEmpty()) return;
     '<div class="ck-fee" id="ckFee" hidden></div>'+
     '<div class="ck-total"><span>Total pesanan</span><b id="ckTotal">'+rupiah(grand())+'</b></div>'+
     '<div class="ck-save" id="ckSave" hidden></div>'+
-    '<div class="ck-note">Pre-order \u00b7 ready 1\u20132 hari kerja setelah pembayaran dikonfirmasi.</div>'+
+    '<div class="ck-note">Pre-order \u00b7 dibuat jam 7 pagi, siap sekitar jam 2 siang di tanggal pilihanmu.</div>'+
     '<div class="mpay">Bisa bayar cash (COD), QRIS, atau transfer, dikonfirmasi via WhatsApp.</div>'+
     '<button type="button" class="ck-wa" id="ckWA" disabled>Pilih tanggal dulu</button>'+
     '<button type="button" class="ck-qris" id="ckQRIS" hidden><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/><path d=\"M14 14h3v3h-3zM20 14v3M14 20h3M20 20v.01\"/></svg> <span>Bayar sekarang (QRIS)</span></button>'+
@@ -3042,7 +3041,7 @@ function waMessage(){ var L=[], n=totalMochi(), ub=usedBoxes(), notes=notesText(
   if(methodFee()>0) L.push("Biaya "+METHODS[ckMethod].label+": +"+rupiah(methodFee()));
   if(ckMethod==="delivery"||ckMethod==="paxel") L.push("Ongkir: dikonfirmasi lewat WhatsApp (belum termasuk total)");
   L.push("Estimasi total: "+rupiah(grand()+methodFee()));
-  L.push(""); L.push("Saya paham pesanan pre-order dan ready 1\u20132 hari kerja setelah pembayaran dikonfirmasi.");
+  L.push(""); L.push("Saya paham pesanan pre-order: dibuat jam 7 pagi dan siap sekitar jam 2 siang di tanggal pilihan saya.");
   return encodeURIComponent(L.join("\n"));
 }
 
