@@ -844,10 +844,25 @@ function fromSupaOrder(row){
   (it.boxes||[]).forEach(function(b){ (b.items||[]).forEach(function(x){ items.push({name:x.name, qty:x.qty}); }); });
   (it.dubai||[]).forEach(function(x){ items.push({name:x.name, qty:x.qty}); });
   return { id:row.id, supaId:row.id, fromServer:true, name:row.customer_name||"Tanpa nama", method:row.method||"-",
-    wa:row.address||"", date:row.order_date||null, status: row.status==="selesai"?"selesai":"masuk",
-    paid: row.status==="lunas"||row.status==="selesai", items:items, note:row.note||"", total:row.total||0 };
+    wa:row.address||"", date:row.order_date||null,
+    status: row.status==="selesai"||row.stage==="selesai" ? "selesai" : (row.stage==="dibuat"||row.stage==="siap" ? row.stage : "masuk"),
+    paid: row.status==="lunas"||row.status==="selesai", items:items, note:row.note||"", total:row.total||0,
+    done: row.done||{}, source: row.source||"" };
 }
 function supaStatusFor(o){ return o.status==="selesai" ? "selesai" : (o.paid ? "lunas" : "baru"); }
+/* simpan progres pesanan ke server (status bayar + tahap kerja + centang produksi), biar sama di semua HP */
+var PROGRESS_COLS_OK = true;
+function saveOrderProgress(o){
+  if(!o.fromServer || !window.MM || !MM.ready) return;
+  var full = { status:supaStatusFor(o), stage:(o.status==="masuk"?"baru":o.status), done:o.done||{} };
+  MM.updateOrder(o.supaId, PROGRESS_COLS_OK ? full : { status:full.status }).then(function(r){
+    if(r.ok) return;
+    if(PROGRESS_COLS_OK && /stage|done/.test(r.reason||"")){
+      PROGRESS_COLS_OK=false; toast("Progres belum bisa disimpan ke server — jalankan SQL kolom stage & done dulu.");
+      MM.updateOrder(o.supaId,{status:full.status});
+    } else toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi"));
+  });
+}
 async function syncOrdersFromSupabase(){
   try{
     if(!window.MM || !MM.ready) return;
@@ -866,7 +881,7 @@ function startOrderNotifications(){
     var o=fromSupaOrder(row);
     if(!CFG.orders.some(function(x){ return x.id===o.id; })) CFG.orders.unshift(o);
     saveCFG();
-    toast("🛎️ Pesanan baru dari "+o.name+"!");
+    toast("🛎️ Pesanan baru dari "+o.name+"!"); try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
     if(typeof go==="function"&&typeof PAGE!=="undefined"&&PAGE==="pesanan") renderPesanan();
     if(typeof renderNav==="function") renderNav();
   });
@@ -1381,7 +1396,7 @@ function cleanQR(s){ return String(s||"").replace(/[\r\n\t]/g,""); }
 /* ============================================================
    PAGE: PESANAN (orders + produksi + tugas)
    ============================================================ */
-let ORDER_FILTER="aktif", SUBTAB="pesanan", PROD_DATE=null, editingOrder=null, oDraft=null;
+let ORDER_FILTER="aktif", SUBTAB="kerja", KERJA_DAY=0, PROD_DATE=null, editingOrder=null, oDraft=null;
 /* ============ BACA PESANAN DARI CHAT (tempel teks / screenshot) ============ */
 function _norm(s){
   return (s||"").toString().toLowerCase()
@@ -1674,22 +1689,24 @@ function renderPesanan(){
   const p=$("page-pesanan");
   p.innerHTML=`
     <div class="tabs-sub" style="display:flex;gap:6px;background:var(--purple-soft);padding:5px;border-radius:14px;margin-bottom:16px">
+      <button data-sub="kerja" style="flex:1;padding:9px;border-radius:10px;font-weight:700;font-size:13px;${SUBTAB==="kerja"?"background:#fff;color:var(--purple)":"color:var(--ink-2)"}">Kerjaan</button>
       <button data-sub="pesanan" style="flex:1;padding:9px;border-radius:10px;font-weight:700;font-size:13px;${SUBTAB==="pesanan"?"background:#fff;color:var(--purple)":"color:var(--ink-2)"}">Pesanan</button>
-      <button data-sub="produksi" style="flex:1;padding:9px;border-radius:10px;font-weight:700;font-size:13px;${SUBTAB==="produksi"?"background:#fff;color:var(--purple)":"color:var(--ink-2)"}">Produksi</button>
+
       <button data-sub="tugas" style="flex:1;padding:9px;border-radius:10px;font-weight:700;font-size:13px;${SUBTAB==="tugas"?"background:#fff;color:var(--purple)":"color:var(--ink-2)"}">Tugas</button>
     </div>
     <div id="subBody"></div>
     ${SUBTAB==="pesanan"?'<div style="position:sticky;bottom:70px;margin-top:8px;display:grid;gap:8px"><button class="btn btn-g full" id="scanOrderBtn">Tempel dari chat / screenshot</button><button class="btn btn-p full" id="addOrderBtn">+ Pesanan baru</button></div>':""}`;
   p.querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{SUBTAB=b.dataset.sub;renderPesanan();});
   if(SUBTAB==="pesanan"){ renderOrders(); const ab=p.querySelector("#addOrderBtn"); if(ab) ab.onclick=()=>openOrder(null); const sb=p.querySelector("#scanOrderBtn"); if(sb) sb.onclick=()=>openScan(); }
-  else if(SUBTAB==="produksi") renderProduksi();
+  else if(SUBTAB==="kerja") renderKerja();
   else renderTugas();
 }
 const STATUS_FLOW=["masuk","dibuat","siap","selesai"];
 const STATUS_LABEL={masuk:"Baru masuk",dibuat:"Lagi dibuat",siap:"Siap",selesai:"Selesai"};
 const STATUS_NEXT={masuk:"Mulai buat",dibuat:"Tandai siap",siap:"Selesai",selesai:"Selesai"};
-function todayISO(){return new Date().toISOString().slice(0,10);}
-function isoAdd(iso,d){const x=new Date(iso+"T00:00:00");x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);}
+function localISO(x){return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");}   /* tanggal lokal (WIB), bukan UTC */
+function todayISO(){return localISO(new Date());}
+function isoAdd(iso,d){const x=new Date(iso+"T00:00:00");x.setDate(x.getDate()+d);return localISO(x);}
 function fmtDay(iso){if(!iso)return"Tanpa tanggal";const d=new Date(iso+"T00:00:00"),t=todayISO();const dow=["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"][d.getDay()];const lbl=`${dow}, ${d.getDate()} ${["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][d.getMonth()]}`;if(iso===t)return"Hari ini · "+lbl;if(iso===isoAdd(t,1))return"Besok · "+lbl;return lbl;}
 function orderMatches(o,f){const t=todayISO();if(f==="aktif")return o.status!=="selesai";if(f==="hari")return o.date===t;if(f==="besok")return o.date===isoAdd(t,1);if(f==="belumbayar")return!o.paid&&o.status!=="selesai";return true;}
 function renderOrders(){
@@ -1730,12 +1747,93 @@ function orderCard(o){
 }
 function bindOrders(){
   $("subBody").querySelectorAll("[data-adv]").forEach(b=>b.onclick=()=>{const o=CFG.orders.find(x=>x.id===b.dataset.adv);const i=STATUS_FLOW.indexOf(o.status);if(i<3){o.status=STATUS_FLOW[i+1];saveCFG();renderPesanan();renderNav();toast(o.name+": "+STATUS_LABEL[o.status]);
-    if(o.fromServer&&window.MM&&MM.ready) MM.updateOrder(o.supaId,{status:supaStatusFor(o)});
+    saveOrderProgress(o);
   }});
   $("subBody").querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>{const o=CFG.orders.find(x=>x.id===b.dataset.pay);o.paid=!o.paid;saveCFG();renderPesanan();
-    if(o.fromServer&&window.MM&&MM.ready) MM.updateOrder(o.supaId,{status:supaStatusFor(o)});
+    saveOrderProgress(o);
   });
   $("subBody").querySelectorAll("[data-oedit]").forEach(b=>b.onclick=()=>openOrder(b.dataset.oedit));
+}
+/* ===== KERJAAN: daftar kerja otomatis dari pesanan (tanpa nulis apa-apa) ===== */
+function itemsOf(o){ return (o.items||[]).map(function(i){ return { name:i.name||(prodById(i.id)||{}).name||"?", qty:+i.qty||0 }; }).filter(function(i){ return i.qty>0; }); }
+function ordersForDay(off){
+  const t=todayISO(), day=isoAdd(t,off), act=CFG.orders.filter(o=>o.status!=="selesai");
+  return act.filter(o=>o.date===day || (off===0 && (!o.date || o.date<t)));
+}
+function kerjaSteps(os){
+  const bayar=os.filter(o=>!o.paid), paid=os.filter(o=>o.paid);
+  const packing=paid.filter(o=>o.status==="masuk"||o.status==="dibuat"), serah=os.filter(o=>o.status==="siap"&&o.paid);
+  const bikin={}; packing.forEach(o=>itemsOf(o).forEach(i=>{ const b=bikin[i.name]=bikin[i.name]||{qty:0,done:0}; b.qty+=i.qty; if(o.done&&o.done[i.name]) b.done+=i.qty; }));
+  const bikinOpen=Object.keys(bikin).filter(n=>bikin[n].done<bikin[n].qty).length;
+  return { bayar, packing, serah, bikin, open: bayar.length + bikinOpen + packing.length + serah.length };
+}
+function kerjaCheck(on){ return `<div style="width:26px;height:26px;border-radius:8px;border:2px solid ${on?"var(--siap)":"var(--line-2)"};background:${on?"var(--siap)":"#fff"};flex:none;display:flex;align-items:center;justify-content:center">${on?'<svg viewBox="0 0 24 24" width="15" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>':""}</div>`; }
+function kerjaItems(o){ return itemsOf(o).map(i=>`${esc(i.name)} ×${i.qty}`).join(", "); }
+function renderKerja(){
+  const t=todayISO();
+  const days=[0,1,2].map(off=>({off, label: off===0?"Hari ini":off===1?"Besok":fmtDay(isoAdd(t,off)).split(",")[0], n: kerjaSteps(ordersForDay(off)).open }));
+  const os=ordersForDay(KERJA_DAY), S=kerjaSteps(os);
+  let html=`<div class="catbar" id="kDays">${days.map(d=>`<button data-kd="${d.off}" class="${d.off===KERJA_DAY?"on":""}">${esc(d.label)}${d.n?" ("+d.n+")":""}</button>`).join("")}</div>`;
+  html+=`<div style="background:${S.open?"var(--purple-soft)":"var(--ok-bg)"};color:${S.open?"var(--purple)":"var(--ok)"};border-radius:14px;padding:13px 14px;font-weight:800;font-size:15px;margin:4px 0 6px">${S.open?`${S.open} kerjaan lagi · ${fmtDay(isoAdd(t,KERJA_DAY))}`:(os.length?"Semua beres! 🎉":"Belum ada pesanan untuk hari ini ✨")}</div>`;
+  const late=os.filter(o=>o.date&&o.date<t);
+  if(late.length) html+=`<div style="font-size:12.5px;font-weight:700;color:var(--danger);background:var(--danger-bg);border-radius:10px;padding:8px 11px;margin-bottom:6px">⚠️ ${late.length} pesanan lewat tanggal, belum selesai — ikut ditampilkan di sini.</div>`;
+
+  // 1. cek bayar
+  if(S.bayar.length){
+    html+=`<div class="grp-t" style="margin-top:16px">💸 Cek pembayaran · ${S.bayar.length}</div>`;
+    html+=S.bayar.map(o=>`<div class="sec-card" style="padding:12px;margin-bottom:8px">
+      <div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")} · ${rupiah(o.total||0)}</div>
+        <div style="font-size:12px;color:var(--ink-2);font-weight:600;margin-top:2px">${kerjaItems(o)}</div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:2px">${esc(o.method||"-")}${o.date?" · "+esc(fmtDay(o.date)):""}</div></div>
+      </div>
+      <div style="display:flex;gap:7px;margin-top:9px"><button class="btn btn-p btn-sm" style="flex:1" data-kpay="${o.id}">Sudah bayar ✓</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
+    </div>`).join("");
+    const pend=S.bayar.reduce((a,o)=>a+itemsOf(o).reduce((x,i)=>x+i.qty,0),0);
+    if(pend) html+=`<div style="font-size:11.5px;color:var(--ink-2);font-weight:600;margin:-2px 2px 4px">${pend} pcs dari pesanan ini masuk daftar "Bikin" setelah ditandai bayar.</div>`;
+  }
+  // 2. bikin
+  const names=Object.keys(S.bikin);
+  if(names.length){
+    const tot=names.reduce((a,n)=>a+S.bikin[n].qty,0);
+    html+=`<div class="grp-t" style="margin-top:16px">🍡 Bikin · ${tot} pcs</div>`;
+    html+=names.sort((a,b)=>S.bikin[b].qty-S.bikin[a].qty).map(n=>{ const b=S.bikin[n], done=b.done>=b.qty;
+      return `<div class="ed-item" data-kb="${esc(n)}" style="cursor:pointer;${done?"background:var(--ok-bg);border-color:transparent":""}">${kerjaCheck(done)}
+        <div class="ed-main" style="font-weight:700;font-size:14.5px;${done?"text-decoration:line-through;color:var(--ink-2)":""}">${esc(n)}</div>
+        <div style="font-weight:800;font-size:20px;color:${done?"var(--ink-2)":"var(--purple)"}">${b.qty}</div></div>`; }).join("");
+  }
+  // 3. packing
+  if(S.packing.length){
+    html+=`<div class="grp-t" style="margin-top:16px">📦 Packing · ${S.packing.length}</div>`;
+    html+=S.packing.map(o=>{ const its=itemsOf(o), ready=its.every(i=>o.done&&o.done[i.name]);
+      return `<div class="sec-card" style="padding:12px;margin-bottom:8px;border-left:4px solid ${ready?"var(--siap)":"var(--line-2)"}">
+        <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")}</div>
+        <div style="font-size:12.5px;color:var(--ink);font-weight:600;margin-top:3px">${kerjaItems(o)}</div>
+        ${o.note?`<div style="font-size:12px;color:var(--ink-2);background:var(--warn-bg);border-radius:9px;padding:6px 9px;margin-top:6px;font-weight:600">📝 ${esc(o.note)}</div>`:""}
+        <div style="display:flex;gap:7px;margin-top:9px"><button class="btn ${ready?"btn-p":"btn-g"} btn-sm" style="flex:1" data-ksiap="${o.id}">${ready?"Sudah dipacking ✓":"Packing selesai (walau belum dicentang)"}</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
+      </div>`; }).join("");
+  }
+  // 4. serahkan
+  if(S.serah.length){
+    html+=`<div class="grp-t" style="margin-top:16px">🛵 Serahkan · ${S.serah.length}</div>`;
+    html+=S.serah.map(o=>`<div class="sec-card" style="padding:12px;margin-bottom:8px;border-left:4px solid var(--siap)">
+      <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")} · ${esc(o.method||"-")}</div>
+      ${o.wa?`<div style="font-size:12.5px;font-weight:600;margin-top:3px">📍 ${esc(o.wa)}</div>`:""}
+      <div style="font-size:12px;color:var(--ink-2);margin-top:2px">${kerjaItems(o)}</div>
+      <div style="display:flex;gap:7px;margin-top:9px"><button class="btn btn-p btn-sm" style="flex:1" data-kdone="${o.id}">Sudah diterima pembeli ✓</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
+    </div>`).join("");
+  }
+  $("subBody").innerHTML=html;
+  const body=$("subBody"), find=id=>CFG.orders.find(x=>x.id===id), after=()=>{ saveCFG(); renderKerja(); renderNav(); };
+  body.querySelectorAll("[data-kd]").forEach(b=>b.onclick=()=>{ KERJA_DAY=+b.dataset.kd; renderKerja(); });
+  body.querySelectorAll("[data-kpay]").forEach(b=>b.onclick=()=>{ const o=find(b.dataset.kpay); o.paid=true; saveOrderProgress(o); after(); toast(o.name+": lunas ✓"); });
+  body.querySelectorAll("[data-kb]").forEach(el=>el.onclick=()=>{ const n=el.dataset.kb, b=S.bikin[n], on=!(b.done>=b.qty);
+    S.packing.forEach(o=>{ if(!itemsOf(o).some(i=>i.name===n)) return; o.done=Object.assign({},o.done||{}); if(on) o.done[n]=true; else delete o.done[n];
+      const all=itemsOf(o).every(i=>o.done[i.name]); o.status = all ? "dibuat" : "masuk"; saveOrderProgress(o); });
+    after(); });
+  body.querySelectorAll("[data-ksiap]").forEach(b=>b.onclick=()=>{ const o=find(b.dataset.ksiap); o.status="siap"; saveOrderProgress(o); after(); toast(o.name+": siap diserahkan"); });
+  body.querySelectorAll("[data-kdone]").forEach(b=>b.onclick=()=>{ const o=find(b.dataset.kdone); o.status="selesai"; saveOrderProgress(o); after(); toast(o.name+": selesai 🎉"); });
+  body.querySelectorAll("[data-oedit]").forEach(b=>b.onclick=()=>openOrder(b.dataset.oedit));
 }
 function renderProduksi(){
   const ds=[...new Set(CFG.orders.filter(o=>o.status!=="selesai"&&o.date).map(o=>o.date))].sort();
@@ -1798,7 +1896,7 @@ $("importFile").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new 
 $("clearAll").onclick=()=>{if(!confirm("Hapus SEMUA data? Nggak bisa dibalikin."))return;localStorage.removeItem(KEY);CFG=JSON.parse(JSON.stringify(DEFAULT_CONFIG));CFG.orders=[];CFG.tasks=[];CFG.prodDone={};saveCFG();$("menuX").click();go(PAGE);toast("Semua data dihapus.");};
 
 /* init */
-renderNav(); go("kasir");
+renderNav(); go("pesanan");
 if(memoryOnly) toast("Penyimpanan otomatis nggak aktif di preview. Buka file langsung buat simpan permanen.");
 
 
@@ -2290,16 +2388,19 @@ function resizeImage(file, size, cb){
 }
 
 /* ---------- ORDER EDIT ---------- */
+/* pesanan dari website/3D cuma simpan nama produk -> cocokkan ke produk di dashboard */
+function nameToId(n){ if(!n) return null; const a=String(n).trim().toLowerCase(), b=a.replace(/^mochi /,"");
+  const p=CFG.products.find(x=>{ const m=(x.name||"").toLowerCase(); return m===a||m===b||m.replace(/^mochi /,"")===b; }); return p?p.id:null; }
 function openOrder(id){
   const o = id ? CFG.orders.find(x=>x.id===id) : null;
-  oDraft = { items:{}, method:o?.method||"Ambil", paid:o?.paid||false };
-  if(o) o.items.forEach(i=>oDraft.items[i.id]=i.qty);
+  oDraft = { items:{}, method:o?.method||"Ambil", paid:o?.paid||false, unmatched:[] };
+  if(o) o.items.forEach(i=>{ const pid=i.id||nameToId(i.name); if(pid) oDraft.items[pid]=(oDraft.items[pid]||0)+(+i.qty||0); else oDraft.unmatched.push(i); });
   editingOrder=id;
   const el=modalShell("orderBack",`
     <button class="m-x" id="oX">✕</button><div class="m-grab"></div>
     <div class="m-h">${o?"Edit pesanan":"Pesanan baru"}</div>
     <div class="fld"><label>Nama pemesan</label><input id="oName" value="${esc(o?.name||"")}" maxlength="40" placeholder="Contoh: Siti Aisyah"></div>
-    <div class="fld-2"><div class="fld"><label>WhatsApp (opsional)</label><input id="oWa" value="${esc(o?.wa||"")}" inputmode="tel" placeholder="0812..."></div>
+    <div class="fld-2"><div class="fld"><label>${o&&o.fromServer?"Alamat / WhatsApp":"WhatsApp (opsional)"}</label><input id="oWa" value="${esc(o?.wa||"")}" inputmode="tel" placeholder="0812..."></div>
     <div class="fld"><label>Tanggal siap</label><input type="date" id="oDate" value="${o?.date||isoAdd(todayISO(),1)}"></div></div>
     <div class="fld"><label>Cara terima</label><div class="seg" id="oMethod">${["Ambil","COD","Ojek","Kirim"].map(m=>`<button data-m="${m}" style="flex-direction:row">${m}</button>`).join("")}</div></div>
     <div class="fld"><label>Produk</label><div id="oProds" style="display:flex;flex-direction:column;gap:7px;max-height:230px;overflow-y:auto"></div></div>
@@ -2317,11 +2418,19 @@ function openOrder(id){
   renderOrderProds();
   el.querySelector("#oSave").onclick=()=>{
     const name=$("oName").value.trim();
-    const items=Object.keys(oDraft.items).map(id=>({id,qty:oDraft.items[id]}));
+    const items=Object.keys(oDraft.items).filter(id=>oDraft.items[id]>0).map(id=>({id,name:(prodById(id)||{}).name,qty:oDraft.items[id]})).concat(oDraft.unmatched||[]);
     if(!name){$("oName").focus();toast("Isi nama pemesan.");return;}
     if(!items.length){toast("Pilih minimal satu produk.");return;}
     const data={ name, wa:$("oWa").value.trim(), date:$("oDate").value||"", method:oDraft.method, paid:oDraft.paid, note:$("oNote").value.trim(), items };
-    if(editingOrder){ Object.assign(CFG.orders.find(x=>x.id===editingOrder),data); }
+    if(editingOrder){ const eo=CFG.orders.find(x=>x.id===editingOrder); Object.assign(eo,data);
+      if(eo.fromServer&&window.MM&&MM.ready){   // pesanan dari website/3D: kirim perubahan ke server juga
+        const total=items.reduce((a,i)=>a+((prodById(i.id)||{}).price||+i.price||0)*i.qty,0)||eo.total||0; eo.total=total;
+        const rows=items.map(i=>({name:i.name,qty:i.qty,price:(prodById(i.id)||{}).price||i.price||0}));
+        MM.updateOrder(eo.supaId,{ customer_name:name, address:data.wa||null, order_date:data.date||null, note:data.note||null, method:data.method||null, total,
+          items:{ boxes:[{box:"Pesanan", items:rows.filter(r=>!/cookie|chewy/i.test(r.name))}], dubai:rows.filter(r=>/cookie|chewy/i.test(r.name)) } })
+          .then(r=>{ if(!r.ok) toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi")); });
+        saveOrderProgress(eo);
+      } }
     else { CFG.orders.push(Object.assign({id:uid(),status:"masuk",createdAt:Date.now()},data)); }
     saveCFG(); closeModal(el); renderPesanan(); renderNav(); toast(editingOrder?"Pesanan diperbarui.":"Pesanan ditambah.");
   };
