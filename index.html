@@ -1905,13 +1905,13 @@ function qrToSVG(qr, opt = {}){
        + `<path d="${path}" fill="${dark}"/></svg>`;
 }
 
-  function _promo(){ return (window.MOCHI_CONFIG&&MOCHI_CONFIG.promo)||{on:false}; } function _promoLive(){ var P=_promo(); if(!P.on) return false; if(P.mode==="daily"){ var s=(P.startHour!=null?P.startHour:8), d=(P.durationHours!=null?P.durationHours:12); var now=new Date(); var h=now.getHours()+now.getMinutes()/60; if((s+d)>=24){ return h>=s || h<((s+d)%24); } return h>=s && h<(s+d); } if(P.mode==="rolling") return true; var hr=new Date().getHours(); return hr>=9; }
-  function wasPrice(p){ var P=_promo(); if(!_promoLive()||!P.percent) return null; var b=Math.round(p/(1-P.percent/100)/500)*500; return b>p?b:null; }
-  function priceTag(price,unit){ var u=unit?'<small>'+unit+'</small>':''; var w=wasPrice(price); if(w==null) return rupiah(price)+u; return '<s class="was">'+rupiah(w)+'</s> '+rupiah(price)+u+' <span class="off">-'+_promo().percent+'%</span>'; }
+  function _promo(){ return (window.MOCHI_CONFIG&&MOCHI_CONFIG.promo)||{on:false}; } function _promoLive(){ var P=_promo(); return !!(P.on && window.MM_PROMO && MM_PROMO.live()); }
+  function wasPrice(p){ if(!_promoLive()) return null; var b=MM_PROMO.risen(p); return b>p?b:null; }   /* harga coret = harga setelah promo berakhir */
+  function priceTag(price,unit){ var u=unit?'<small>'+unit+'</small>':''; var w=wasPrice(price); if(w==null) return rupiah(price)+u; return '<s class="was">'+rupiah(w)+'</s> '+rupiah(price)+u+' <span class="off">-'+Math.round((w-price)/w*100)+'%</span>'; }
   (function(){ var P=_promo(); var pb=document.querySelector(".promobar"); if(!pb||!P.on) return; var DEF=pb.innerHTML;
-    function target(){ var P=_promo(); if(P.mode==="daily"){ var s=(P.startHour!=null?P.startHour:8), d=(P.durationHours!=null?P.durationHours:12); var n=new Date(); var end=new Date(n.getFullYear(),n.getMonth(),n.getDate(),s+d,0,0,0,0).getTime(); if(end<=Date.now())end+=86400000; return end; } if(P.mode==="rolling"){ var k="mm_promo_start",s=+localStorage.getItem(k); if(!s){s=Date.now();try{localStorage.setItem(k,String(s));}catch(e){}} var span=(P.resetHours||24)*3600000,end=s+span; while(end<=Date.now())end+=span; return end; } var n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()+1,0,0,0,0).getTime(); }
+    function target(){ return MM_PROMO.endsAt; }
     function z(x){return(x<10?"0":"")+x;}
-    function tick(){ var P=_promo(); if(!_promoLive()){ pb.classList.remove("promo"); pb.innerHTML=DEF; return; } pb.classList.add("promo"); var ms=target()-Date.now(); if(ms<0)ms=0; var tot=Math.floor(ms/1000),d=Math.floor(tot/86400),hh=Math.floor(tot%86400/3600),mm=Math.floor(tot%3600/60),ss=tot%60; var t=(d>0?d+" hari ":"")+z(hh)+":"+z(mm)+":"+z(ss); pb.innerHTML="\uD83D\uDD25 "+(P.label||"Promo")+" \u00b7 Hemat "+P.percent+"% \u00b7 berakhir dalam <b>"+t+"</b>"; }
+    function tick(){ var P=_promo(); if(!_promoLive()){ pb.classList.remove("promo"); pb.innerHTML=DEF; return; } pb.classList.add("promo"); var ms=target()-Date.now(); if(ms<0)ms=0; var tot=Math.floor(ms/1000),d=Math.floor(tot/86400),hh=Math.floor(tot%86400/3600),mm=Math.floor(tot%3600/60),ss=tot%60; var t=(d>0?d+" hari ":"")+z(hh)+":"+z(mm)+":"+z(ss); pb.innerHTML="\uD83D\uDD25 "+(P.label||"Promo")+" berakhir dalam <b>"+t+"</b> \u00b7 setelah itu harga naik "+MM_PROMO.risePct+"%"; }
     tick(); setInterval(tick,1000);
   })();
   setTimeout(function(){ if(!window.MM_ORDERS_OFF) return; document.body.classList.add("mm-orders-off");
@@ -2920,6 +2920,12 @@ function qrToSVG(qr, opt = {}){
   }
 
   // mount builder + custom form + reviews (single page)
+  /* setelah promo berakhir: harga naik otomatis (kecuali dashboard sudah menaikkan harga di server) */
+  function applyPriceRise(){
+    var M=window.MM_PROMO, on=!!(M && M.needRise(window.MM_PRICE_RISE_APPLIED));
+    [].concat(FLAVORS,DUBAI,BOXES).forEach(function(f){ if(f._base==null) f._base=f.price||0; f.price = on ? M.risen(f._base) : f._base; });
+  }
+  applyPriceRise();
   const homeBuilder  = mountBuilder(document.getElementById("home-builder"), "h");
 
   /* ===== produk langsung dari Supabase begitu tersedia (nggak perlu upload file lagi) ===== */
@@ -2933,7 +2939,7 @@ function qrToSVG(qr, opt = {}){
           var f=list[i], r=byId[f.id];
           if(!r){ continue; }
           if(r.hidden){ list.splice(i,1); continue; }
-          f.name=r.name; f.price=r.price; f.soldOut=!!r.sold_out; f.cat=r.cat||"";
+          f.name=r.name; f._base=r.price; f.soldOut=!!r.sold_out; f.cat=r.cat||"";
           var ri=r.img||(r.img_url&&/^(data:|https?:)/.test(r.img_url)?r.img_url:""); f.img=ri||f.img; f.tagline=r.tagline||f.tagline||""; f.desc=r.descr||f.desc||"";
           if(isDubai) f.short=f.short||r.name;
           delete byId[f.id];
@@ -2942,9 +2948,10 @@ function qrToSVG(qr, opt = {}){
       applyTo(FLAVORS,false); applyTo(DUBAI,true);
       var addM=[], addD=[];
       Object.keys(byId).forEach(function(id){ var r=byId[id]; if(r.hidden) return;
-        var np={id:id,name:r.name,price:r.price,cat:r.cat||"",desc:r.descr||"",img:r.img||"",soldOut:!!r.sold_out,tagline:r.tagline||""};
+        var np={id:id,name:r.name,price:r.price,_base:r.price,cat:r.cat||"",desc:r.descr||"",img:r.img||"",soldOut:!!r.sold_out,tagline:r.tagline||""};
         if(r.type==="dubai"){ np.short=r.name; addD.push(np); } else { addM.push(np); } });
       FLAVORS.unshift.apply(FLAVORS,addM); DUBAI.push.apply(DUBAI,addD);
+      applyPriceRise();
       if(homeBuilder.rebuildCards) homeBuilder.rebuildCards();
       homeBuilder.render();
     }).catch(function(e){ console.warn("[MM] gagal ambil produk live:",e); });
@@ -2961,6 +2968,7 @@ function qrToSVG(qr, opt = {}){
         var av={}; rows.forEach(function(r){ av[r.the_date]= r.status==="penuh"?"full":"limited"; });
         C.availability=av;
       }
+      if(data && data.priceRiseApplied){ window.MM_PRICE_RISE_APPLIED=true; applyPriceRise(); if(homeBuilder.rebuildCards) homeBuilder.rebuildCards(); homeBuilder.render(); }
       if(homeBuilder.rebuildDates) homeBuilder.rebuildDates();
     }).catch(function(e){ console.warn("[MM] gagal ambil jadwal live:",e); });
   })();

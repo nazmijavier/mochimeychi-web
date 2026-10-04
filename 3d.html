@@ -1848,6 +1848,8 @@ function _hex(v,def){ if(v===undefined||v===null||v==="") return def; if(typeof 
     if(img){ np.image=img; np.imageDetail=img; }
     (r.type==="dubai"?CONFIG.dubai:CONFIG.mochi).push(np);
   });
+  /* promo sudah berakhir & harga di server belum dinaikkan -> naikkan di sini */
+  if(window.MM_PROMO && MM_PROMO.needRise(STORE.priceRiseApplied)) CONFIG.mochi.concat(CONFIG.dubai).forEach(function(p){ p.price=MM_PROMO.risen(p.price); });
 })();
 CONFIG.mochi.concat(CONFIG.dubai).forEach(function(p){ if(!p.image && typeof IMG!=="undefined"&&IMG[p.id]) p.image=IMG[p.id]; if(!p.imageDetail && typeof IMGDETAIL!=="undefined"&&IMGDETAIL[p.id]) p.imageDetail=IMGDETAIL[p.id]; PMAP[p.id]=p; });
 var REKOM=["straw","matcha","choco","ube","cookie","mangoo","mango","grape","kunafa2"].filter(function(id){ return !!PMAP[id]; }); // priority mix
@@ -1856,12 +1858,12 @@ if(!REKOM.length) REKOM=CONFIG.mochi.map(function(p){ return p.id; });
 function rupiah(n){ return "Rp"+(n||0).toLocaleString("id-ID"); }
 function kRp(n){ n=n||0; return (n%1000===0?(n/1000):(n/1000).toLocaleString("id-ID"))+"rb"; }
 /* ===== discount engine ===== */
-function DISC(){ var d=STORE.discount||{}; return {on:!!d.on,type:d.type||"percent",value:+d.value||0,label:d.label||"Promo",scope:d.scope||"all"}; }
+function DISC(){ var d=STORE.discount||{}; return {on:!!d.on&&!!(window.MM_PROMO&&MM_PROMO.live()),type:d.type||"percent",value:+d.value||0,label:d.label||"Promo",scope:d.scope||"all"}; }
 function discApplies(p){ var d=DISC(); if(!d.on||d.value<=0||!p) return false; if(Array.isArray(d.scope)) return d.scope.indexOf(p.id)>=0; return true; }
 function niceRp(n){ return Math.round(n/500)*500; }
-function wasUnit(p){ var d=DISC(); if(!discApplies(p)) return p.price; if(d.type==="fixed") return p.price+d.value; var v=Math.min(90,d.value); return niceRp(p.price/(1-v/100)); }
+function wasUnit(p){ var d=DISC(); if(!discApplies(p)) return p.price; if(window.MM_PROMO) return Math.max(p.price,MM_PROMO.risen(p.price)); if(d.type==="fixed") return p.price+d.value; var v=Math.min(90,d.value); return niceRp(p.price/(1-v/100)); }
 function sellUnit(p){ return p.price; }
-function discLabel(){ var d=DISC(); return d.type==="fixed"?("\u2212"+rupiah(d.value)):("\u2212"+d.value+"%"); }
+function discLabel(){ var d=DISC(); if(window.MM_PROMO) return "\u2212"+MM_PROMO.offPct()+"%"; return d.type==="fixed"?("\u2212"+rupiah(d.value)):("\u2212"+d.value+"%"); }
 function wasGrand(){ var t=0; eachBoxItem(function(id){ t+=wasUnit(PMAP[id]); }); for(var k in dubaiQty){ if(PMAP[k]) t+=dubaiQty[k]*wasUnit(PMAP[k]); } return t; }
 function savings(){ return Math.max(0, wasGrand()-grand()); }
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
@@ -2874,7 +2876,7 @@ function updateHint(){ var h=$("hint"); if(!h) return; var n=filled();
   else { h.classList.add("done"); h.innerHTML="box penuh! checkout atau tambah box lagi \ud83c\udf89"; }
 }
 function renderRibbon(){ var el=$("promoRibbon"); if(!el) return; var d=DISC();
-  if(d.on&&d.value>0){ el.hidden=false; el.innerHTML="\ud83c\udff7\ufe0f "+esc(d.label)+" "+discLabel()+" \u00b7 otomatis semua menu"; }
+  if(d.on&&d.value>0){ el.hidden=false; el.innerHTML="\ud83c\udff7\ufe0f "+esc(d.label)+" "+discLabel()+" \u00b7 sampai 31 Okt, setelah itu harga naik "+(window.MM_PROMO?MM_PROMO.risePct:20)+"%"; }
   else el.hidden=true; }
 function sync(){
   var c=mochiCounts();
@@ -3071,6 +3073,7 @@ requestAnimationFrame(tick);
       E.methods=data.methods.map(function(m){ return {id:m.id,label:m.label,d:m.d||m.label,fee:m.fee||0,tbd:m.tbd?1:0,addr:m.addr?1:0,sub:m.sub||"",icon:m.icon||"box",note:m.note||"",days:m.days||null,alt2:m.alt2?1:0}; });
       if(data.methodDays) E.methodDays=data.methodDays;
     }
+    if(data && data.priceRiseApplied) E.priceRiseApplied=true;
     if(Array.isArray(dates)&&dates.length){   /* kosong = belum pernah di-Update dari dashboard, pakai jadwal bawaan */
       var d={}; dates.forEach(function(r){ var a=String(r.the_date).split("-"); d[(+a[0])+"-"+(+a[1])+"-"+(+a[2])]=(r.status==="penuh"?"penuh":"konfirmasi"); });
       E.dates=d;

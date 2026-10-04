@@ -899,6 +899,19 @@ function applyTokoForm(){
   s.name=$("tName").value.trim(); s.wa=$("tWa").value.trim(); s.ig=$("tIg").value.trim();
   s.location=$("tLoc").value.trim(); s.note=$("tNote").value.trim();
 }
+function storeDataObj(){ return { name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods, priceRiseApplied:!!CFG.store.priceRiseApplied }; }
+/* promo berakhir -> naikkan harga semua produk sekali (website & 3D sudah naik otomatis, ini biar harga di server/kasir sama) */
+async function maybeApplyPriceRise(){
+  var M=window.MM_PROMO; if(!M || M.live() || CFG.store.priceRiseApplied || !window.MM || !MM.ready) return;
+  var before=CFG.products.map(function(p){ return p.price; });
+  CFG.products.forEach(function(p){ p.price=M.risen(p.price); });
+  var r=await MM.upsertProducts(CFG.products.map(toSupaProduct));
+  if(!r.ok){ CFG.products.forEach(function(p,i){ p.price=before[i]; }); toast("Gagal menaikkan harga: "+(r.reason||"cek koneksi")); return; }
+  CFG.store.priceRiseApplied=true;
+  await MM.upsertStoreSettings(storeDataObj());
+  saveCFG(); LAST_SYNCED_STORE=storeSnapshot(); updateSyncButton(); if(typeof go==="function"&&typeof PAGE!=="undefined") go(PAGE);
+  toast("Promo selesai: harga semua produk naik "+M.risePct+"%.");
+}
 async function syncStoreFromSupabase(){
   try{
     if(!window.MM || !MM.ready) return;
@@ -910,9 +923,10 @@ async function syncStoreFromSupabase(){
       if(data.qrisList) CFG.store.qrisList=data.qrisList;
       if(data.methodDays) CFG.store.methodDays=data.methodDays;
       if(data.methods) CFG.store.methods=data.methods;
+      CFG.store.priceRiseApplied=!!data.priceRiseApplied;
     } else if(window.MM&&MM.ready){
       // server belum punya apa-apa -> dorong data lokal sebagai awalan
-      await MM.upsertStoreSettings({ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods });
+      await MM.upsertStoreSettings(storeDataObj());
       var dateRows2 = Object.keys(CFG.store.dates||{}).map(function(k){ return { the_date:k, status:CFG.store.dates[k] }; });
       if(dateRows2.length) await MM.replaceBlockedDates(dateRows2);
     }
@@ -931,7 +945,7 @@ async function pushStoreToSupabase(){
   var rows=ids.map(prodById).filter(Boolean).map(toSupaProduct);
   if(rows.length){ r0=await MM.upsertProducts(rows); if(r0.ok) ids.forEach(function(id){ delete PENDING_PROD[id]; }); }
   for(var i=0;i<dels.length;i++){ var rd=await MM.deleteProduct(dels[i]); if(rd.ok) delete PENDING_DEL[dels[i]]; else r0=rd; }
-  var storeData={ name:CFG.store.name, wa:CFG.store.wa, ig:CFG.store.ig, location:CFG.store.location, note:CFG.store.note, qrisList:CFG.store.qrisList, methodDays:CFG.store.methodDays, methods:CFG.store.methods };
+  var storeData=storeDataObj();
   var r1 = await MM.upsertStoreSettings(storeData);
   var dateRows = Object.keys(CFG.store.dates||{}).map(function(k){ return { the_date:k, status:CFG.store.dates[k] }; });
   var r2 = await MM.replaceBlockedDates(dateRows);
@@ -986,7 +1000,7 @@ $("lgLogo").innerHTML = LOGO_SVG;
     var session = await MM.getSession();
     if (!session) { showGate("signin"); return; }
     var ok = await MM.checkIsAdmin();
-    if (ok) { hideGate(); syncProductsFromSupabase(); syncStoreFromSupabase(); syncOrdersFromSupabase(); startOrderNotifications(); } else { showGate("denied", session.user.email); }
+    if (ok) { hideGate(); Promise.all([syncProductsFromSupabase(), syncStoreFromSupabase()]).then(maybeApplyPriceRise); syncOrdersFromSupabase(); startOrderNotifications(); } else { showGate("denied", session.user.email); }
   }
   if (!MM || !MM.ready) {
     // Supabase belum diisi (SUPABASE_URL/KEY) — biar tetap bisa dipakai/dites tanpa login dulu.
@@ -1105,7 +1119,8 @@ function renderProduk(){
   const groups=[{k:"mochi",t:"Mochi"},{k:"dubai",t:"Dubai Chewy Cookie"}];
   p.innerHTML=`
     <h2 class="ph">Produk</h2>
-    <div class="ph-sub">Edit nama, harga, foto, stok. Perubahan langsung kepakai di Kasir &amp; Pesanan.</div>
+    <div class="ph-sub">Edit nama, harga, foto, stok. Tekan Update biar website &amp; app 3D ikut berubah.</div>
+    ${(window.MM_PROMO&&MM_PROMO.live())?`<div class="save-note" style="margin:10px 0 0;padding:10px 12px;border-radius:12px;background:var(--purple-soft)">🔥 <b>${MM_PROMO.label}</b> berakhir <b>31 Oktober</b>. Mulai 1 November harga di website &amp; app 3D otomatis naik ${MM_PROMO.risePct}% (contoh Rp15.000 → Rp${MM_PROMO.risen(15000).toLocaleString("id-ID")}). Harga di sini ikut naik sendiri saat dashboard dibuka setelah tanggal itu. Isi harga di sini tetap harga promo.</div>`:""}
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button class="btn btn-p full" id="addProdBtn">+ Tambah produk</button>
       <button class="btn btn-g" id="markAllBtn" style="white-space:nowrap">Semua Ready</button>

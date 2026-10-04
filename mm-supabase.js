@@ -12,6 +12,18 @@
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
         <script src="mm-supabase.js"></script>
    ============================================================ */
+/* ===== Promo & kenaikan harga — dipakai website, app 3D, dan dashboard ===== */
+window.MM_PROMO = {
+  label: "Promo Soft Opening",
+  endsAt: Date.parse("2026-11-01T00:00:00+07:00"),   // promo berlaku s/d 31 Okt 2026 23:59 WIB
+  risePct: 20,                                        // setelah promo: harga naik 20%
+  live: function () { return Date.now() < this.endsAt; },
+  risen: function (p) { return Math.round((+p || 0) * (1 + this.risePct / 100) / 500) * 500; },
+  /* true kalau promo sudah lewat tapi harga di server belum dinaikkan (dashboard belum dibuka) */
+  needRise: function (appliedOnServer) { return !this.live() && !appliedOnServer; },
+  offPct: function () { return Math.round(100 - 10000 / (100 + this.risePct)); }   // 20% naik = hemat 17% selama promo
+};
+
 (function () {
   "use strict";
 
