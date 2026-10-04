@@ -135,6 +135,14 @@ window.MM_PROMO = {
       // kolom "note" di tabel orders wajib terisi (NOT NULL) -> catatan kosong dikirim sebagai "" bukan null
       order = Object.assign({}, order, { note: order.note || "" });
       return client.from("orders").insert(order)
+        .then(function (r) {
+          // kolom pay_status / pay_amount belum dibuat di database -> simpan tanpa kolom itu (info bayar tetap ada di catatan)
+          if (r.error && /pay_status|pay_amount/.test(r.error.message || "")) {
+            var slim = Object.assign({}, order); delete slim.pay_status; delete slim.pay_amount;
+            return client.from("orders").insert(slim);
+          }
+          return r;
+        })
         .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; })
         .catch(function (e) { return { ok: false, reason: String(e) }; });
     },

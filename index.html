@@ -2009,6 +2009,14 @@ function qrToSVG(qr, opt = {}){
     msg += `\nAku lampirin bukti transfernya ya.`;
     document.getElementById("qmPaid").href = `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
   }
+  /* pembeli tekan "Sudah bayar" -> pesanan masuk dashboard sebagai "Klaim bayar QRIS" + nominal persis buat dicocokkan */
+  document.getElementById("qmPaid").addEventListener("click", function(){
+    var o = window.MM_QPAY; if(!o || !window.MM || !MM.createOrder || !QORDER) return;
+    window.MM_QPAY = null;   // cegah dobel kalau diklik 2x
+    var info = "Klaim bayar QRIS " + rupiah(QORDER.bayar) + (QORDER.kode ? " (kode unik " + QORDER.kode + ")" : "");
+    MM.createOrder(Object.assign({}, o, { pay_status: "qris_klaim", pay_amount: QORDER.bayar, note: (o.note ? o.note + " · " : "") + info }))
+      .then(function(r){ if(r && !r.ok) console.warn("[MM] pesanan QRIS gagal disimpan:", r.reason); });
+  });
 
   document.addEventListener("click", e => {
     const s = e.target.closest("[data-qs]");
@@ -2753,7 +2761,8 @@ function qrToSVG(qr, opt = {}){
         note: q("custNote").value.trim() || null,
         total: total,
         items: { boxes: boxes, dubai: dubai },
-        source: "website"
+        source: "website",
+        pay_status: "chat_wa"            // "chat_wa" = pesan lewat WA, belum bayar; "qris_klaim" = pembeli bilang sudah bayar QRIS
       };
     }
     /* buka tab kosong SEGERA (masih di dalam klik asli) biar tidak diblokir popup blocker,
@@ -2770,7 +2779,7 @@ function qrToSVG(qr, opt = {}){
     if(qBtn) qBtn.addEventListener("click", ()=>{
       if(isMulti()){
         const s=qrisState(); if(!s.ok){ if(!q("custName").value.trim() || !state.delivery || needAddrMissing()) scrollToNeed(); return; }
-        MM && MM.createOrder && MM.createOrder(orderPayload(grand())).catch(function(e){ console.warn("[MM] gagal simpan pesanan QRIS:", e); });
+        window.MM_QPAY = orderPayload(grand());   /* disimpan ke dashboard saat pembeli tekan "Sudah bayar" */
         openQRIS({ total: grand(), nama: q("custName").value.trim(), box: multiLogBox(),
           items: multiItems().concat(DUBAI.filter(d=>state.flavors[d.id]>0).map(d=>({name:d.name, qty:state.flavors[d.id], sub:d.price*state.flavors[d.id]}))),
           terima: state.delivery, tanggal: state.date, catatan: q("custNote").value.trim() });
@@ -2782,7 +2791,7 @@ function qrToSVG(qr, opt = {}){
       if(isCustom || isOjek()) return;
       if(!q("custName").value.trim() || !state.delivery || needAddrMissing()){ scrollToNeed(); return; }
       if(!noBox && picked()===0) return;
-      MM && MM.createOrder && MM.createOrder(orderPayload(grand())).catch(function(e){ console.warn("[MM] gagal simpan pesanan QRIS:", e); });
+      window.MM_QPAY = orderPayload(grand());   /* disimpan ke dashboard saat pembeli tekan "Sudah bayar" */
       openQRIS({
         total: grand(),
         nama: q("custName").value.trim(),

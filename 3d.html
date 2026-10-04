@@ -3020,7 +3020,7 @@ function saveOrder3D(){ try{ if(!window.MM||!MM.createOrder) return;
   var db=dubaiIds().filter(function(id){ return dubaiQty[id]>0; }).map(function(id){ var p=PMAP[id]; return {name:p.name, qty:dubaiQty[id], price:p.price}; });
   var iso=ckPick?(ckPick.getFullYear()+"-"+("0"+(ckPick.getMonth()+1)).slice(-2)+"-"+("0"+ckPick.getDate()).slice(-2)):null;
   MM.createOrder({ customer_name:"Pembeli App 3D (cek WA)", method:(METHODS[ckMethod]?METHODS[ckMethod].label:null), method_fee:methodFee(),
-    address:null, order_date:iso, note:notesText()||null, total:grand()+methodFee(), items:{boxes:bx, dubai:db}, source:"3d" })
+    address:null, order_date:iso, note:notesText()||null, total:grand()+methodFee(), items:{boxes:bx, dubai:db}, source:"3d", pay_status:"chat_wa" })
     .then(function(r){ if(r&&!r.ok) console.warn("[MM] pesanan 3D gagal disimpan:",r.reason); });
   }catch(e){ console.warn("[MM] pesanan 3D:",e); } }
 function waMessage(){ var L=[], n=totalMochi(), ub=usedBoxes(), notes=notesText(), st=ckPick?dateStatus(ckPick):"";

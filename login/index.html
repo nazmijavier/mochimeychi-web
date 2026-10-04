@@ -858,7 +858,21 @@ function fromSupaOrder(row){
     wa:row.address||"", date:row.order_date||null,
     status: row.status==="selesai"||row.stage==="selesai" ? "selesai" : (row.stage==="dibuat"||row.stage==="siap" ? row.stage : "masuk"),
     paid: row.status==="lunas"||row.status==="selesai", items:items, note:row.note||"", total:row.total||0,
-    done: row.done||{}, source: row.source||"" };
+    done: row.done||{}, source: row.source||"",
+    payStatus: row.pay_status || (/Klaim bayar QRIS/.test(row.note||"") ? "qris_klaim" : "chat_wa"), payAmount: row.pay_amount||null };
+}
+/* label status bayar: Lunas / Klaim bayar QRIS (cek mutasi) / Baru chat WA */
+function payBadge(o){
+  if(o.paid) return `<span class="flag" style="background:var(--ok-bg);color:var(--ok)">Lunas</span>`;
+  if(o.payStatus==="qris_klaim") return `<span class="flag" style="background:#FFF1D6;color:#9A5B00">🧾 Klaim bayar QRIS</span>`;
+  if(o.fromServer) return `<span class="flag" style="background:var(--danger-bg);color:var(--danger)">💬 Baru chat WA</span>`;
+  return `<span class="flag" style="background:var(--danger-bg);color:var(--danger)">Belum bayar</span>`;
+}
+function payHint(o){
+  if(o.paid) return "";
+  if(o.payStatus==="qris_klaim") return `<div style="font-size:12px;font-weight:700;color:#9A5B00;background:#FFF1D6;border-radius:9px;padding:7px 10px;margin-top:8px">Cocokkan nominal <b>${rupiah(o.payAmount||o.total||0)}</b> di notifikasi DANA/ShopeePay, lalu tap "Sudah bayar".</div>`;
+  if(o.fromServer) return `<div style="font-size:12px;font-weight:600;color:var(--ink-2);margin-top:8px">Pembeli baru kirim chat WA — tunggu bukti transfer di WhatsApp.</div>`;
+  return "";
 }
 function supaStatusFor(o){ return o.status==="selesai" ? "selesai" : (o.paid ? "lunas" : "baru"); }
 /* simpan progres pesanan ke server (status bayar + tahap kerja + centang produksi), biar sama di semua HP */
@@ -1744,7 +1758,7 @@ function orderCard(o){
       <div style="font-size:11.5px;color:var(--ink-2);font-weight:600">${esc(o.method||"-")}${o.wa?" · "+esc(o.wa):""}</div></div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
         <span class="flag" style="background:var(--purple-soft);color:var(--${o.status})">${STATUS_LABEL[o.status]}</span>
-        <span class="flag" style="background:${o.paid?'var(--ok-bg)':'var(--danger-bg)'};color:${o.paid?'var(--ok)':'var(--danger)'}">${o.paid?"Lunas":"Belum bayar"}</span>
+        ${payBadge(o)}
       </div>
     </div>
     <div class="kitems" style="margin:0 0 10px">${items.map(i=>`<span class="kitem">${thumb(prodImgFor(i),i.name,30)}<span>${esc(i.name)} <b>×${i.qty}</b></span></span>`).join("")}</div>
@@ -1784,7 +1798,7 @@ function ordersForDay(off){
   return act.filter(o=>o.date===day || (off===0 && (!o.date || o.date<t)));
 }
 function kerjaSteps(os){
-  const bayar=os.filter(o=>!o.paid), paid=os.filter(o=>o.paid);
+  const bayar=os.filter(o=>!o.paid).sort((a,b)=>(b.payStatus==="qris_klaim")-(a.payStatus==="qris_klaim")), paid=os.filter(o=>o.paid);
   const packing=paid.filter(o=>o.status==="masuk"||o.status==="dibuat"), serah=os.filter(o=>o.status==="siap"&&o.paid);
   const bikin={}; packing.forEach(o=>itemsOf(o).forEach(i=>{ const b=bikin[i.name]=bikin[i.name]||{qty:0,done:0,img:i.img}; b.qty+=i.qty; if(o.done&&o.done[i.name]) b.done+=i.qty; }));
   const bikinOpen=Object.keys(bikin).filter(n=>bikin[n].done<bikin[n].qty).length;
@@ -1814,9 +1828,9 @@ function renderKerja(){
     html+=`<div class="grp-t" id="k-bayar" style="margin-top:16px">${grpIc("bayar")}Cek pembayaran · ${S.bayar.length}</div>`;
     html+=S.bayar.map(o=>`<div class="sec-card" style="padding:12px;margin-bottom:8px">
       <div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0">
-        <div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")} · ${rupiah(o.total||0)}</div>
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="font-weight:800;font-size:14.5px">${esc(o.name||"Tanpa nama")} · ${rupiah(o.payAmount||o.total||0)}</div>${payBadge(o)}</div>
         ${kerjaItems(o)}
-        <div style="font-size:11.5px;color:var(--ink-2);margin-top:2px">${esc(o.method||"-")}${o.date?" · "+esc(fmtDay(o.date)):""}</div></div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:6px">${esc(o.method||"-")}${o.date?" · "+esc(fmtDay(o.date)):""}</div>${payHint(o)}</div>
       </div>
       <div style="display:flex;gap:7px;margin-top:9px"><button class="btn btn-p btn-sm" style="flex:1" data-kpay="${o.id}">Sudah bayar ✓</button><button class="btn btn-g btn-sm" data-oedit="${o.id}">Detail</button></div>
     </div>`).join("");
