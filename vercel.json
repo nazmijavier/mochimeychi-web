@@ -1,6 +1,39 @@
 {
   "rewrites": [
-    { "source": "/", "has": [{ "type": "host", "value": "mochimeychi.app" }], "destination": "/3d.html" },
-    { "source": "/", "has": [{ "type": "host", "value": "www.mochimeychi.app" }], "destination": "/3d.html" }
+    {
+      "source": "/order",
+      "destination": "/3d.html"
+    },
+    {
+      "source": "/order/",
+      "destination": "/3d.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "mochimeychi.app"
+        }
+      ],
+      "destination": "/3d.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.mochimeychi.app"
+        }
+      ],
+      "destination": "/3d.html"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/3d.html",
+      "destination": "/order",
+      "permanent": false
+    }
   ]
 }
