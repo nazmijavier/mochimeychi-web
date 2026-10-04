@@ -2426,7 +2426,7 @@ function openOrder(id){
       if(eo.fromServer&&window.MM&&MM.ready){   // pesanan dari website/3D: kirim perubahan ke server juga
         const total=items.reduce((a,i)=>a+((prodById(i.id)||{}).price||+i.price||0)*i.qty,0)||eo.total||0; eo.total=total;
         const rows=items.map(i=>({name:i.name,qty:i.qty,price:(prodById(i.id)||{}).price||i.price||0}));
-        MM.updateOrder(eo.supaId,{ customer_name:name, address:data.wa||null, order_date:data.date||null, note:data.note||null, method:data.method||null, total,
+        MM.updateOrder(eo.supaId,{ customer_name:name, address:data.wa||null, order_date:data.date||null, note:data.note||"", method:data.method||null, total,
           items:{ boxes:[{box:"Pesanan", items:rows.filter(r=>!/cookie|chewy/i.test(r.name))}], dubai:rows.filter(r=>/cookie|chewy/i.test(r.name)) } })
           .then(r=>{ if(!r.ok) toast("Belum tersimpan ke server: "+(r.reason||"cek koneksi")); });
         saveOrderProgress(eo);

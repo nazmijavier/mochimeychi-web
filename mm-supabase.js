@@ -132,6 +132,8 @@ window.MM_PROMO = {
       // Kalau pakai .select(), Supabase minta izin "lihat lagi baris yang baru dibuat"
       // dan itu ditolak, jadi seluruh penyimpanan ikut gagal walau datanya sebenarnya masuk.
       if (!ready) { warnOnce(); return Promise.resolve({ ok: false, reason: "not-configured" }); }
+      // kolom "note" di tabel orders wajib terisi (NOT NULL) -> catatan kosong dikirim sebagai "" bukan null
+      order = Object.assign({}, order, { note: order.note || "" });
       return client.from("orders").insert(order)
         .then(function (r) { return r.error ? { ok: false, reason: r.error.message } : { ok: true }; })
         .catch(function (e) { return { ok: false, reason: String(e) }; });
